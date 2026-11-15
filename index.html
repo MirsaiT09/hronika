@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Хроника пар</title>
+<meta name="description" content="Расписание, пропуски, статистика посещаемости и поиск преподавателей">
+<meta name="theme-color" content="#090a0c">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Хроника">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@400;500;600&family=Roboto+Condensed:wght@400;500;600&display=swap">
+<link rel="preload" href="assets/deutsch-gothic.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="burst" viewBox="-50 -50 100 100"><path id="burstPath" d=""/></symbol>
+    <linearGradient id="gMetal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity=".28"/></linearGradient>
+    <linearGradient id="gRose" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#642c3e"/><stop offset="1" stop-color="#c77791"/></linearGradient>
+    <linearGradient id="gRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".6" stop-color="#fff" stop-opacity=".4"/><stop offset="1" stop-color="#fff" stop-opacity=".75"/></linearGradient>
+  </defs>
+</svg>
+
+<div class="bg" aria-hidden="true"><div class="fog"></div><canvas id="silk"></canvas><div class="grain"></div></div>
+<main class="app" id="app"></main>
+<div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+
+<nav class="nav" aria-label="Разделы">
+  <div class="nav-in glass" role="tablist">
+    <button class="tab" role="tab" data-tab="pairs" aria-selected="true">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Пары
+    </button>
+    <button class="tab" role="tab" data-tab="teachers" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5Z"/><path d="M6.5 11.6V16c0 1.4 2.5 3 5.5 3s5.5-1.6 5.5-3v-4.4M22 9.5v5"/></svg>Преподы
+    </button>
+    <button class="tab" role="tab" data-tab="skips" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M5 20V12M10 20V6M15 20v-9M20 20V4"/></svg>Прогулы
+    </button>
+    <button class="tab" role="tab" data-tab="session" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M7 3.5h10M7 20.5h10M8 3.5c0 4 8 5 8 8.5s-8 4.5-8 8.5M16 3.5c0 4-8 5-8 8.5s8 4.5 8 8.5"/></svg>Сессия
+    </button>
+  </div>
+</nav>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="more.js"></script>
+</body>
+</html>
