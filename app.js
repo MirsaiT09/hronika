@@ -52,7 +52,7 @@ const baseMonday = today.getDay() === 0 ? addDays(mondayOf(today), 7) : mondayOf
 
 const state = {
   tab: 'pairs', weekOffset: 0, day: today.getDay() === 0 ? 0 : dow(today),
-  teacher: null, query: '', tParity: null,
+  teacher: null, query: '', tWeek: 0, tDay: today.getDay() === 0 ? 0 : dow(today),
   period: 'sem', pOffset: 0, justStamped: null,
   sub: store.get('hp.skipsSub', 'stats'), // Прогулы: stats | certs | cmp
 };
@@ -87,7 +87,6 @@ function occurrences(from, to, list = MINE) {
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = name => name.split(' ')[0][0];
 const plural = (n, a, b, c) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c; };
-const ACC = { eye: 'assets/eye.png', cross: 'assets/cross.png', star: 'assets/star.png', spike: 'assets/spike.png', ribs: 'assets/ribs.png' };
 const bldgOf = room => { const code = (room.split('/')[1] || '').trim(); return BUILDINGS[code] ? { code, ...BUILDINGS[code] } : null; };
 const ICON = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -97,10 +96,24 @@ const ICON = {
   right: '<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
 };
-const brand = () => `<div class="brand"><img src="${ACC.eye}" alt="">Панель студента</div>`;
-const sealSvg = (fresh, text) => `<div class="seal ${fresh ? 'fresh' : ''}">
-  <svg viewBox="-50 -50 100 100"><use href="#burst" fill="#642c3e" stroke="#d5d9de" stroke-width="1.2"/><circle r="26" fill="none" stroke="#d5d9de" stroke-opacity=".7" stroke-width="1" stroke-dasharray="2 3"/></svg>
-  <span>${text}</span></div>`;
+const ORN = '<div class="orn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v20M5 9h14M12 2l2 3-2 3-2-3zM8.5 16 12 22l3.5-6"/></svg></div>';
+const fmtDur = m => m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч${m % 60 ? ' ' + (m % 60) + ' мин' : ''}`;
+// стикеры (assets/st/N.webp) — для светлой темы
+const ST = n => `assets/st/${n}.webp`;
+const STICKERS = [97, 59, 62, 94, 36, 72, 89, 31, 13, 39, 34, 96, 85, 37, 38, 20, 11, 2, 7, 33, 40, 54, 64, 86, 83, 88, 98, 103, 105, 4, 3, 65, 47, 56, 73, 26, 49, 75, 76, 79, 15, 16, 43, 9, 14, 41, 87, 61, 63, 55, 66, 67, 68, 71, 74, 77, 78, 80, 84, 90, 91, 93, 95, 99, 101, 102, 104, 1, 6, 8, 10, 12, 17, 19, 21, 22, 23, 24, 27, 28, 29, 30, 32, 35, 42, 44, 45, 46, 48, 50, 51, 52, 53, 57, 58, 60, 69, 70, 81, 82];
+const dayIdx = d => Math.floor((dayStart(d) - new Date(2026, 0, 1)) / DAY_MS);
+const stickerOfDay = (d = dayStart(now()), shift = 0) => ST(STICKERS[((dayIdx(d) + shift) % STICKERS.length + STICKERS.length) % STICKERS.length]);
+// сдвиги в коллекции для каждого места: в один день все стикеры разные, в полночь меняются все
+const stickerNow = shift => stickerOfDay(dayStart(now()), shift); // «сегодня» считается заново — после полуночи стикеры сменятся сами
+const ST_SHIFT = { brand: 3, teachers: 11, where: 17, skips: 23, empty: 29, certs: 31, session: 37 };
+const THEME_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17Z" fill="currentColor"/></svg>';
+const brand = () => `<div class="brand"><img class="only-light brand-st" src="${stickerNow(ST_SHIFT.brand)}" alt="">
+  <span class="brand-end"><span class="grp-chip only-light"><i></i>${esc(GROUP.inst || '')} · гр. ${esc(GROUP.group || '')}</span>
+  <button class="theme-btn" data-themetoggle aria-label="Сменить тему">${THEME_ICON}</button></span></div>`;
+// наклейка-«печать» пропуска: своя для каждой пары (по дате и номеру), не меняется при перерисовке
+const stampOf = key => { let h = 7; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return ST(STICKERS[h % STICKERS.length]); };
+const sealSvg = (fresh, key) => `<div class="seal ${fresh ? 'fresh' : ''}">
+  <img class="seal-st only-light" src="${stampOf(key)}" alt=""></div>`;
 (function buildBurst() {
   let d = '';
   const spikes = 18;
@@ -128,7 +141,17 @@ function renderPairs() {
       <small>${lbl}</small><strong>${d.getDate()}</strong><span class="dots">${dots}</span></button>`;
   }).join('');
   let cards = '';
+  let prev = null;
   list.forEach((p, idx) => {
+    // «окно»: между парами пропущен хотя бы один номер пары
+    if (prev && p.n - prev.n > 1) {
+      const ws = at(date, BELLS[prev.n][1]), we = at(date, BELLS[p.n][0]);
+      const mins = Math.round((we - ws) / 6e4);
+      const nowWin = ws <= t0 && t0 < we;
+      cards += `<div class="gap ${nowWin ? 'now' : ''}" role="note"><span class="gap-line"></span>
+        <span class="gap-pill"><b>${nowWin ? 'Сейчас окно' : 'Окно'}</b> · ${fmtDur(mins)}<i>${BELLS[prev.n][1]} – ${BELLS[p.n][0]}</i></span><span class="gap-line"></span></div>`;
+    }
+    if (!prev || p.n !== prev.n) prev = p;
     const key = iso(date) + '|' + p.n;
     const sk = skips[key];
     const t = TEACHERS[p.t];
@@ -142,8 +165,8 @@ function renderPairs() {
       <div class="pair-body">
         ${isNow ? '<span class="now-pill">идёт сейчас</span>' : ''}
         <h3 class="pair-title">${esc(p.s)}</h3>
-        <div class="pair-line"><span class="tag ${p.type}">${TYPES[p.type]}</span><span class="room">${esc(p.room)}</span>${b ? `<span class="bldg">${esc(b.name)}</span>` : ''}</div>
-        ${t ? `<div class="pair-line"><button class="teacher-link" data-teacher="${p.t}">${t.rank} ${esc(t.name)}</button>${weekNote(p) ? `<span class="bldg">${weekNote(p)}</span>` : ''}</div>` : weekNote(p) ? `<div class="pair-line"><span class="bldg">${weekNote(p)}</span></div>` : ''}
+        <div class="pair-line"><span class="tag ${p.type}">${TYPES[p.type]}</span><span class="room">${esc(p.room)}</span>${b ? `<span class="bldg">${esc(b.name)}</span>` : ''}${weekNote(p) ? `<span class="bldg">${weekNote(p)}</span>` : ''}</div>
+        ${t ? `<div class="pair-line"><button class="teacher-link" data-teacher="${p.t}">${t.rank} ${esc(t.name)}</button></div>` : ''}
         ${tn.length ? `<div class="pair-note">${esc(tn[tn.length - 1])}</div>` : ''}
       </div>
       <div class="pair-actions">
@@ -152,21 +175,22 @@ function renderPairs() {
       </div>
       ${sk ? `<div class="reasons" role="group" aria-label="Причина пропуска">${Object.entries(REASONS).map(([r, l]) =>
         `<button class="chip" data-reason="${key}|${r}" aria-pressed="${sk.r === r}">${l}</button>`).join('')}</div>` : ''}
-      ${sk ? sealSvg(state.justStamped === key, past ? 'про-<br>пуск' : 'не<br>пойду') : ''}
+      ${sk ? sealSvg(state.justStamped === key, key) : ''}
     </article>`;
   });
-  if (!list.length) cards = `<div class="free glass"><img src="${ACC.star}" alt=""><span class="big">${holiday ? 'Праздник' : 'Свобода'}</span><span>Пар нет. День твой.</span></div>`;
+  if (!list.length) cards = `<div class="free glass"><img class="only-light free-st" src="${stickerOfDay(date, 7)}" alt=""><span class="big">${holiday ? 'Праздник' : 'Свобода'}</span><span>Пар нет. День твой.</span></div>`;
   const skippedToday = list.filter(p => skips[iso(date) + '|' + p.n]).length;
   return `
     ${brand()}
     <header class="hero">
       <div class="hero-row">
-        <h1 class="title-h"><img class="title-img" src="assets/title-raspisanie.png" alt="Расписание" width="1600" height="505"></h1>
-        <img class="hero-cross float" src="${parity === 'even' ? ACC.cross : ACC.eye}" alt="${parity === 'even' ? 'Чётная неделя — крест' : 'Нечётная неделя — око'}">
+        <h1 class="title-h"><span class="kicker only-light">${DOW_LONG[state.day]}<b></b></span><span class="title-pix">Расписание</span></h1>
+        
       </div>
       <div class="divider"></div>
       <span class="meta">${DOW_LONG[state.day]}, ${date.getDate()} ${MONTHS[date.getMonth()]} <i>·</i> ${GROUP.inst} <i>·</i> гр. ${GROUP.group}</span>
     </header>
+    ${state.weekOffset === 0 && typeof nowCard === 'function' ? nowCard() : ''}
     <div class="week glass">
       <div class="week-label"><span class="week-no">${wn}</span>
         <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span></div>
@@ -178,6 +202,7 @@ function renderPairs() {
     </div>
     <nav class="days" aria-label="Дни недели">${days}</nav>
     <section class="list" aria-live="polite">${cards}</section>
+    ${list.length ? ORN : ''}
     <p class="foot">${list.length ? `${list.length} ${plural(list.length, 'пара', 'пары', 'пар')}${skippedToday ? ` · пропуск ${skippedToday}` : ''}` : ''}</p>
     ${D.demo ? '<p class="demo-note">Демо-данные: понедельник — со скриншота, остальное — пример</p>'
       : D.source ? `<p class="demo-note">Расписание с mgsu.ru · обновлено ${D.source.updated.split('-').reverse().join('.')} · <button class="link-btn" data-upd>проверить</button></p>` : ''}`;
@@ -223,26 +248,45 @@ function renderTeachers() {
   }).join('');
   return `
     ${brand()}
-    <header class="page-title img-title"><div><h1><img class="title-img" src="assets/title-prepody.png" alt="Преподы" width="1600" height="530"></h1><p>Где найти · когда ловить</p></div><img src="${ACC.eye}" alt=""></header>
+    <header class="page-title img-title"><div><h1><span class="title-pix">Преподы</span></h1><p>Где найти · когда ловить</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.teachers)}" alt=""></header>
     <div class="search-wrap"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input class="search glass" id="tq" type="search" enterkeyhint="search" placeholder="Фамилия или предмет" value="${esc(state.query)}" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Поиск преподавателя"></div>
     <p class="hint" style="margin:0 4px">${q ? `Найдено: ${found.length}${found.length > 60 ? ' · показаны первые 60, уточните запрос' : ''}` : `Ваши преподаватели · поиск — по всем ${Object.keys(TEACHERS).length} преподавателям ${GROUP.inst}`}</p>
     <section class="list">${rows || `<div class="free glass"><span>Никого не нашёл по «${esc(state.query)}»</span></div>`}</section>`;
 }
 
+// пары преподавателя на конкретную дату; потоковые пары (несколько групп в одной аудитории) — одной строкой
+function teacherDay(id, d) {
+  const by = {};
+  occurrences(d, d, BY_T[id] || []).forEach(o => {
+    const k = o.p.n + '|' + o.p.room + '|' + o.p.s + '|' + o.p.type;
+    (by[k] = by[k] || { ...o, groups: [] }).groups.push(o.p.g);
+  });
+  return Object.values(by).sort((a, b) => a.p.n - b.p.n);
+}
+const groupsLabel = gs => gs.length === 1 ? grpLabel(gs[0]) : `${grpLabel(gs[0]).replace(/гр\. .*/, '')}гр. ${gs.map(g => String(g).split('-').pop()).join(', ')}`;
+
 function renderTeacherCard(id) {
   const t = TEACHERS[id];
-  const curPar = parityOf(weekNo(now()));
-  const parity = state.tParity || curPar;
-  const w = teacherWhere(id);
-  const todayDow = dow(now());
-  const slots = (BY_T[id] || []).filter(p => p.w === 'both' || p.w === parity).sort((a, b) => a.d - b.d || a.n - b.n);
-  const slotHtml = slots.map(p => {
-    const isToday = parity === curPar && p.d === todayDow;
-    return `<div class="slot"${isToday ? ' style="background:linear-gradient(90deg,rgba(100,44,62,.25),transparent);margin:0 -20px;padding-inline:20px"' : ''}>
-      <span class="sd"><b>${BELLS[p.n][0]}</b>${DOW_SHORT[p.d]} · ${p.n} пара</span>
-      <span class="ss"><span>${esc(p.room)} · ${grpLabel(p.g)}</span><span>${TYPES[p.type]} · ${esc(p.s)}${weekNote(p) ? ' · ' + weekNote(p) : ''}</span></span></div>`;
+  const monday = addDays(baseMonday, state.tWeek * 7);
+  const wn = weekNo(monday), parity = parityOf(wn);
+  const date = addDays(monday, state.tDay);
+  const t0 = now();
+  const days = DOW_SHORT.map((lbl, i) => {
+    const d = addDays(monday, i);
+    const n = teacherDay(id, d).length;
+    return `<button class="btn day ${i === state.tDay ? 'metal' : ''} ${iso(d) === iso(today) ? 'today' : ''}" data-tday="${i}" aria-pressed="${i === state.tDay}" aria-label="${DOW_LONG[i]}, ${d.getDate()}: ${n} ${plural(n, 'пара', 'пары', 'пар')}">
+      <small>${lbl}</small><strong>${d.getDate()}</strong><span class="dots">${'<i></i>'.repeat(Math.min(n, 6))}</span></button>`;
   }).join('');
+  const list = teacherDay(id, date);
+  const slotHtml = list.map(o => {
+    const cls = o.start <= t0 && t0 < o.end ? 'now' : o.end <= t0 ? 'past' : '';
+    return `<div class="slot ${cls}">
+      <span class="sd"><b>${BELLS[o.p.n][0]}</b>${o.p.n} пара${cls === 'now' ? ' · <em>сейчас</em>' : ''}</span>
+      <span class="ss"><span>${esc(o.p.room || '—')} · ${groupsLabel(o.groups)}</span><span>${TYPES[o.p.type]} · ${esc(o.p.s)}</span></span></div>`;
+  }).join('');
+  const holiday = HOLIDAYS.has(iso(date));
+  const w = teacherWhere(id);
   const lbl = { now: 'Сейчас на паре', break: 'Перерыв · следующая пара', today: 'Сегодня будет', later: 'Где поймать' };
   let where = '';
   if (w) {
@@ -251,7 +295,7 @@ function renderTeacherCard(id) {
       <span class="room-big">${esc(w.o.p.room)}</span>
       <span class="when">${dayLabel(w.o.date)}, ${BELLS[w.o.p.n][0]}–${BELLS[w.o.p.n][1]} · ${grpLabel(w.o.p.g)} · ${TYPES[w.o.p.type].toLowerCase()}</span>
       ${b ? `<span class="bl">${esc(b.name)} — ${esc(b.hint)}</span>` : ''}
-      <img src="${ACC.spike}" alt=""></div>`;
+      <img class="only-light where-st" src="${stickerNow(ST_SHIFT.where)}" alt=""></div>`;
   }
   const tn = notes[id] || [];
   return `
@@ -260,11 +304,18 @@ function renderTeacherCard(id) {
     ${where}
     ${t.dept || t.office ? `<div class="office glass">${t.dept ? `<span>${esc(t.dept)}</span>` : ''}${t.office ? `<span>Кабинет кафедры: <b>${esc(t.office)}</b> — если нет на паре</span>` : ''}</div>` : ''}
     <div class="sec-title">Расписание</div>
-    <div class="seg glass" role="group" aria-label="Неделя">
-      <button data-tpar="odd" aria-pressed="${parity === 'odd'}">Нечётная${curPar === 'odd' ? ' · сейчас' : ''}</button>
-      <button data-tpar="even" aria-pressed="${parity === 'even'}">Чётная${curPar === 'even' ? ' · сейчас' : ''}</button>
+    <div class="week glass">
+      <div class="week-label"><span class="week-no">${wn}</span>
+        <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span></div>
+      <div class="arrows">
+        ${state.tWeek ? `<button class="btn round" data-tweek="0" aria-label="К текущей неделе">${ICON.undo}</button>` : ''}
+        <button class="btn round" data-tweek="-1" aria-label="Предыдущая неделя">${ICON.left}</button>
+        <button class="btn round" data-tweek="1" aria-label="Следующая неделя">${ICON.right}</button>
+      </div>
     </div>
-    <div class="slots glass">${slotHtml || '<p class="empty">На этой неделе пар нет</p>'}</div>
+    <nav class="days" aria-label="Дни недели">${days}</nav>
+    <p class="t-date">${DOW_LONG[state.tDay]}, ${date.getDate()} ${MONTHS[date.getMonth()]}</p>
+    <div class="slots glass">${slotHtml || `<p class="empty">${holiday ? 'Праздник — пар нет' : 'В этот день пар нет'}</p>`}</div>
     <div class="sec-title">Заметки</div>
     ${tn.length ? `<div class="notes">${tn.map((n, i) => `<div class="note glass"><p>${esc(n)}</p><button class="del" data-del="${i}" aria-label="Удалить заметку">×</button></div>`).join('')}</div>`
       : `<p class="empty-notes">Заметок пока нет. Запишите, когда принимает долги или где его кафедра.</p>`}
@@ -295,7 +346,7 @@ function ring(pct) {
   const v = pct == null ? 0 : pct;
   return `<div class="ring"><svg viewBox="0 0 124 124" aria-hidden="true">
     <circle cx="62" cy="62" r="${r}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>
-    <circle cx="62" cy="62" r="${r}" fill="none" stroke="url(#gRing)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(c * v / 100).toFixed(1)} ${c.toFixed(1)}"/>
+    ${v > 0 ? `<circle cx="62" cy="62" r="${r}" fill="none" stroke="url(#gRing)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(c * v / 100).toFixed(1)} ${c.toFixed(1)}"/>` : ''}
     ${v < 100 && pct != null ? `<circle cx="62" cy="62" r="${r}" fill="none" stroke="url(#gRose)" stroke-width="10" stroke-dasharray="${(c * (100 - v) / 100).toFixed(1)} ${c.toFixed(1)}" stroke-dashoffset="${(-c * v / 100).toFixed(1)}" opacity=".9"/>` : ''}
   </svg><div class="val"><div><b>${pct == null ? '—' : pct + '%'}</b><small>посещаемость</small></div></div></div>`;
 }
@@ -392,15 +443,15 @@ function renderSkips() {
   const canNext = state.period !== 'sem' && to < SEM_END;
   return `
     ${brand()}
-    <header class="page-title img-title"><div><h1><img class="title-img" src="assets/title-progul.png" alt="Прогулы" width="1600" height="514"></h1><p>Посещаемость и пропуски</p></div><img class="ribs" src="${ACC.ribs}" alt=""></header>
+    <header class="page-title img-title"><div><h1><span class="title-pix">Прогулы</span></h1><p>Посещаемость и пропуски</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.skips)}" alt=""></header>
     ${typeof skipsSubSeg === 'function' ? skipsSubSeg() : ''}
-    <div class="seg glass" role="group" aria-label="Период">
+    <div class="period-tabs" role="group" aria-label="Период">
       ${[['week', 'Неделя'], ['month', 'Месяц'], ['sem', 'Семестр']].map(([k, l]) => `<button data-period="${k}" aria-pressed="${state.period === k}">${l}</button>`).join('')}
     </div>
-    <div class="period-nav">
-      <button class="btn round" data-poff="-1" aria-label="Предыдущий период" ${canPrev ? '' : 'disabled'}>${ICON.left}</button>
+    <div class="period-nav slim">
+      ${state.period !== 'sem' ? `<button class="btn round sm" data-poff="-1" aria-label="Предыдущий период" ${canPrev ? '' : 'disabled'}>${ICON.left}</button>` : ''}
       <span class="lbl">${lbl}</span>
-      <button class="btn round" data-poff="1" aria-label="Следующий период" ${canNext ? '' : 'disabled'}>${ICON.right}</button>
+      ${state.period !== 'sem' ? `<button class="btn round sm" data-poff="1" aria-label="Следующий период" ${canNext ? '' : 'disabled'}>${ICON.right}</button>` : ''}
     </div>
     <div class="summary glass">
       ${ring(pct)}
@@ -419,7 +470,7 @@ function renderSkips() {
     ${dayRows ? `<div class="card glass"><h3>По дням недели</h3>${dayRows}</div>` : ''}
     ${typeRows ? `<div class="card glass"><h3>По виду занятий</h3>${typeRows}</div>` : ''}
     ${rTotal ? `<div class="card glass"><h3>Причины</h3>${reasonBar}</div>` : ''}
-    <div class="card glass"><h3>Журнал пропусков<i>${rTotal}</i></h3>${hist ? `<div class="hist">${hist}</div>` : `<div class="empty"><img class="empty-acc" src="${ACC.star}" alt=""><br>Пропусков нет — так держать</div>`}</div>
+    <div class="card glass"><h3>Журнал пропусков<i>${rTotal}</i></h3>${hist ? `<div class="hist">${hist}</div>` : `<div class="empty"><img class="empty-acc only-light" src="${stickerNow(ST_SHIFT.empty)}" alt=""><br>Пропусков нет — так держать</div>`}</div>
     <p class="hint" style="text-align:center">Отмечайте пропуск кнопкой «Не пойду» / «Пропустил» на карточке пары.</p>`;
 }
 function agg(os, t0, label, hl) {
@@ -433,7 +484,11 @@ const app = document.getElementById('app');
 // разделы и обработчики «после отрисовки» — сюда добавляет свои more.js
 const VIEWS = { pairs: () => renderPairs(), teachers: () => renderTeachers(), skips: () => renderSkips() };
 const AFTER_RENDER = [];
+let lastView = '';
 function render() {
+  const view = [state.tab, state.sub, state.day, state.weekOffset, state.teacher, state.tDay, state.tWeek, state.period, state.pOffset].join('|');
+  app.classList.toggle('enter', view !== lastView);
+  lastView = view;
   app.innerHTML = (VIEWS[state.tab] || VIEWS.pairs)();
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === state.tab));
   state.justStamped = null;
@@ -460,9 +515,10 @@ document.addEventListener('click', e => {
   if (ds.skip) { toggleSkip(ds.skip); render(); return; }
   if (ds.undo) { toggleSkip(ds.undo); render(); return; }
   if (ds.reason) { const [d, n, r] = ds.reason.split('|'); const k = d + '|' + n; if (skips[k]) { skips[k].r = r; saveSkips(); render(); } return; }
-  if (ds.teacher) { state.tab = 'teachers'; state.teacher = ds.teacher; state.tParity = null; render(); window.scrollTo(0, 0); return; }
+  if (ds.teacher) { state.tab = 'teachers'; state.teacher = ds.teacher; state.tWeek = 0; state.tDay = today.getDay() === 0 ? 0 : dow(today); render(); window.scrollTo(0, 0); return; }
   if ('back' in ds) { state.teacher = null; render(); return; }
-  if (ds.tpar) { state.tParity = ds.tpar; render(); return; }
+  if (ds.tday) { state.tDay = +ds.tday; render(); return; }
+  if (ds.tweek) { state.tWeek = +ds.tweek === 0 ? 0 : state.tWeek + +ds.tweek; render(); return; }
   if (ds.period) { state.period = ds.period; state.pOffset = 0; render(); return; }
   if (ds.poff) { state.pOffset += +ds.poff; render(); return; }
   if (ds.del) { notes[state.teacher].splice(+ds.del, 1); saveNotes(); render(); }
@@ -486,118 +542,9 @@ document.addEventListener('input', e => {
 setInterval(() => { const a = document.activeElement; if (!a || !/INPUT|TEXTAREA/.test(a.tagName)) render(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
 
-/* ---------- фон: хромовые шёлковые ленты и бордовые блики ---------- */
-function silk() {
-  const cv = document.getElementById('silk');
-  const ctx = cv.getContext('2d');
-  function ribbon(pts, width, W, H, alpha) {
-    const P = pts.map(([x, y]) => [x * W, y * H]);
-    const Q = P.map(([x, y]) => [x + width, y]);
-    const curve = (A, rev) => {
-      const a = rev ? [...A].reverse() : A;
-      if (!rev) ctx.moveTo(a[0][0], a[0][1]); else ctx.lineTo(a[0][0], a[0][1]);
-      ctx.bezierCurveTo(a[1][0], a[1][1], a[2][0], a[2][1], a[3][0], a[3][1]);
-    };
-    ctx.beginPath(); curve(P, false); curve(Q, true); ctx.closePath();
-    const g = ctx.createLinearGradient(P[0][0], 0, Q[0][0] + width, 0);
-    g.addColorStop(0, `rgba(255,255,255,${alpha * .9})`); g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g; ctx.fill();
-    const sg = ctx.createLinearGradient(0, 0, 0, H);
-    sg.addColorStop(0, `rgba(255,255,255,${alpha * 7})`); sg.addColorStop(.55, `rgba(213,217,222,${alpha * 4})`); sg.addColorStop(1, `rgba(214,130,160,${alpha * 7})`);
-    ctx.save(); ctx.shadowColor = 'rgba(255,255,255,.55)'; ctx.shadowBlur = 8;
-    ctx.beginPath(); curve(P, false); ctx.strokeStyle = sg; ctx.lineWidth = 1.1; ctx.stroke(); ctx.restore();
-  }
-  function flare(x, y, r, strength) {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, `rgba(240,170,195,${.55 * strength})`); g.addColorStop(.25, `rgba(160,62,96,${.3 * strength})`); g.addColorStop(1, 'rgba(100,44,62,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.strokeStyle = `rgba(255,235,242,${.8 * strength})`; ctx.lineWidth = 1; ctx.shadowColor = '#f0aac3'; ctx.shadowBlur = 6;
-    ctx.beginPath(); ctx.moveTo(x - r * .9, y); ctx.lineTo(x + r * .9, y); ctx.moveTo(x, y - r * .6); ctx.lineTo(x, y + r * .6); ctx.stroke(); ctx.restore();
-  }
-  /* --- кибер-сигилы: острые хромовые шипы-тернии по краям (в духе cybersigilism) --- */
-  const rnd = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const bez = (P, n) => Array.from({ length: n }, (_, i) => {
-    const t = i / (n - 1), u = 1 - t;
-    return [0, 1].map(j => u * u * u * P[0][j] + 3 * u * u * t * P[1][j] + 3 * u * t * t * P[2][j] + t * t * t * P[3][j]);
-  });
-  function taper(pts, w, prof) {
-    const L = [], R = [], n = pts.length;
-    pts.forEach(([x, y], i) => {
-      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
-      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
-      const ww = w * prof(i / (n - 1));
-      L.push([x - dy / l * ww, y + dx / l * ww]); R.push([x + dy / l * ww, y - dx / l * ww]);
-    });
-    return L.concat(R.reverse());
-  }
-  function blade(poly, alpha, glow) {
-    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    poly.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
-    const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    g.addColorStop(0, `rgba(255,255,255,${alpha})`); g.addColorStop(.45, `rgba(120,126,136,${alpha * .35})`);
-    g.addColorStop(.6, `rgba(235,238,242,${alpha * .8})`); g.addColorStop(1, `rgba(90,94,102,${alpha * .25})`);
-    ctx.beginPath(); poly.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
-    ctx.save();
-    if (glow) { ctx.shadowColor = 'rgba(199,119,145,.55)'; ctx.shadowBlur = 14; }
-    ctx.fillStyle = g; ctx.fill();
-    ctx.lineWidth = .6; ctx.strokeStyle = `rgba(255,255,255,${alpha * .9})`; ctx.stroke();
-    ctx.restore();
-  }
-  function spike(x, y, ang, len, bend, w, alpha, glow) {
-    const tx = x + Math.cos(ang) * len, ty = y + Math.sin(ang) * len;
-    const cx = (x + tx) / 2 - Math.sin(ang) * bend * len, cy = (y + ty) / 2 + Math.cos(ang) * bend * len;
-    const pts = Array.from({ length: 18 }, (_, i) => { const t = i / 17, u = 1 - t; return [u * u * x + 2 * u * t * cx + t * t * tx, u * u * y + 2 * u * t * cy + t * t * ty]; });
-    blade(taper(pts, w, t => Math.pow(1 - t, 1.4)), alpha, glow);
-  }
-  function sigil(P, s, seed, alpha) {
-    const r = rnd(seed);
-    const pts = bez(P, 80);
-    blade(taper(pts, 5 * s, t => Math.pow(Math.sin(Math.PI * t), .55) + .04), alpha, false);
-    let side = 1;
-    for (let i = 6; i < 74; i += 4 + Math.floor(r() * 6)) {
-      const [x, y] = pts[i], [x2, y2] = pts[i + 1];
-      const tan = Math.atan2(y2 - y, x2 - x);
-      side = r() < .75 ? -side : side;
-      const len = s * (26 + r() * 80) * (.35 + .65 * Math.sin(Math.PI * i / 80));
-      const ang = tan + side * (Math.PI / 2 - .55 - r() * .75);
-      spike(x, y, ang, len, -side * (.18 + r() * .22), 4.2 * s, alpha, r() < .3);
-      if (r() < .5) spike(x, y, ang + side * .55, len * .5, -side * .25, 2.6 * s, alpha * .85, false);
-    }
-    [0, 79].forEach(i => { const [x, y] = pts[i], [x2, y2] = pts[i ? i - 1 : 1]; spike(x, y, Math.atan2(y - y2, x - x2), s * 60, .1, 4 * s, alpha, true); });
-  }
-  function paint() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = cv.clientWidth, H = cv.clientHeight;
-    if (!W || !H) return;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const k = Math.min(1, W / 900);
-    ribbon([[-.06, -.02], [.16, .22], [-.12, .5], [.05, 1.04]], 60 * k + 20, W, H, .05);
-    ribbon([[-.02, .1], [.1, .35], [-.04, .62], [.08, 1.02]], 30 * k + 12, W, H, .035);
-    ribbon([[1.06, -.02], [.84, .26], [1.12, .55], [.95, 1.04]], -(60 * k + 20), W, H, .05);
-    const S = .7 + k * .6, at = (x, y) => [x * W, y * H];
-    const mirror = (fn) => { fn(); ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1); fn(); ctx.restore(); };
-    mirror(() => sigil([at(.5, .02), at(.36, .1), at(.46, .2), at(.3, .3)], S * .9, 77, .1));
-    mirror(() => sigil([at(.5, 1.0), at(.38, .92), at(.48, .84), at(.34, .76)], S * .8, 91, .08));
-    sigil([at(.02, .06), at(.16, .16), at(-.04, .3), at(.07, .44)], S, 7, .3);
-    sigil([at(.98, .38), at(.82, .5), at(1.06, .6), at(.93, .74)], S, 23, .28);
-    sigil([at(.05, .66), at(.2, .74), at(-.02, .86), at(.12, .98)], S * .8, 41, .16);
-    sigil([at(.9, .02), at(.8, .08), at(1.02, .14), at(.88, .2)], S * .6, 5, .14);
-    const sheen = ctx.createLinearGradient(0, H * .2, W, H * .6);
-    sheen.addColorStop(.35, 'rgba(255,255,255,0)'); sheen.addColorStop(.5, 'rgba(255,255,255,.025)'); sheen.addColorStop(.65, 'rgba(255,255,255,0)');
-    ctx.fillStyle = sheen; ctx.fillRect(0, 0, W, H);
-    flare(W * .02, H * .8, 70 * k + 40, 1);
-    flare(W * .985, H * .97, 60 * k + 36, .9);
-    flare(W * .99, H * .03, 40 * k + 24, .55);
-  }
-  let to;
-  addEventListener('resize', () => { clearTimeout(to); to = setTimeout(paint, 120); });
-  paint();
-}
 
 // запуск — после загрузки всех скриптов (more.js дополняет разделы)
-document.addEventListener('DOMContentLoaded', () => { render(); silk(); });
+document.addEventListener('DOMContentLoaded', () => { render(); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

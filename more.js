@@ -1,5 +1,5 @@
 /* «Хроника пар» — дополнения:
-   сессия и зачёты · обновление расписания · серии и ачивки · анализ пропусков и справок · сравнение предметов.
+   сессия и зачёты · обновление расписания · серии без пропусков · анализ пропусков и справок · сравнение предметов.
    Использует данные и функции из app.js; отметки о пропусках берутся из того же hp.skips (новых копий не создаётся). */
 'use strict';
 
@@ -22,7 +22,7 @@ function skipsSubSeg() {
 }
 function renderSkipsSub() {
   return `${brand()}
-    <header class="page-title img-title"><div><h1><img class="title-img" src="assets/title-progul.png" alt="Прогулы" width="1600" height="514"></h1><p>${state.sub === 'certs' ? 'Анализ пропусков' : 'Сравнение предметов'}</p></div><img class="ribs" src="${ACC.ribs}" alt=""></header>
+    <header class="page-title img-title"><div><h1><span class="title-pix">Прогулы</span></h1><p>${state.sub === 'certs' ? 'Анализ пропусков' : 'Сравнение предметов'}</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.skips)}" alt=""></header>
     ${skipsSubSeg()}
     <div class="fade-in">${state.sub === 'certs' ? renderCerts() : renderCompare()}</div>`;
 }
@@ -30,7 +30,8 @@ function renderSkipsSub() {
 /* =====================================================================
    АНАЛИЗ ПРОПУСКОВ И СПРАВОК
    Справка покрывает непрерывный период ≤ 14 календарных дней.
-   В период не попадают дни, когда вы были на парах (иначе справка противоречит посещению).
+   Близкие пропуски (в пределах 14 дней) объединяются в одну справку, даже если между ними
+   были дни, когда вы ходили на пары, — такие дни просто показываются в полосе.
    ===================================================================== */
 const CERT_MAX = 14;
 let certs = store.get('hp.certs', []);        // оформленные: [{id, from, to, at}]
@@ -60,9 +61,10 @@ function skipAnalysis(t0 = now()) {
   return { held, days, all, open, openDays, blocked, partial, planned: plannedSkips(t0) };
 }
 
-// Жадный подбор: от первого незакрытого дня тянем период как можно дальше (≤14 дней, без «занятых» дней).
-// Для точек на прямой с запретными точками жадный алгоритм даёт минимальное число отрезков.
-function autoPeriods(openDays, blocked) {
+// Жадный подбор: от первого незакрытого дня тянем период как можно дальше (≤14 дней).
+// Для точек на прямой жадный алгоритм даёт минимальное число отрезков.
+// blocked — дни, которые нельзя захватывать (сейчас не используется: передаётся пустой список).
+function autoPeriods(openDays, blocked = []) {
   const res = [];
   for (let i = 0; i < openDays.length;) {
     const from = openDays[i];
@@ -94,12 +96,13 @@ function evalPlan(A, plan) {
     const dup = inside.length - fresh.length;
     if (!errs.length) fresh.forEach(x => covered.add(x.key));
     const busy = ok ? A.blocked.filter(d => d >= p.from && d <= p.to) : [];
-    if (busy.length) warns.push(`Захватывает ${busy.length} ${plural(busy.length, 'день', 'дня', 'дней')}, когда вы были на парах: ${busy.map(d => fmtDs(fromIso(d))).join(', ')}`);
+    const notes = [];
+    if (busy.length) notes.push(`Справка охватит и ${busy.length === 1 ? 'день' : 'дни'}, когда вы были на парах: ${busy.map(d => fmtDs(fromIso(d))).join(', ')}.`);
     if (ok && !errs.length && !inside.length) warns.push('В этих датах нет незакрытых пропусков');
     if (dup) warns.push(`${dup} ${plural(dup, 'пропуск уже покрыт', 'пропуска уже покрыты', 'пропусков уже покрыты')} другим периодом`);
     const part = [...new Set(inside.map(x => x.iso))].filter(d => A.partial.has(d));
     if (part.length) warns.push(`В ${part.map(d => fmtDs(fromIso(d))).join(', ')} часть пар вы посетили — уточните у врача/деканата`);
-    return { ...p, i, len, inside, errs, warns: errs.length ? [] : warns };
+    return { ...p, i, len, inside, errs, warns: errs.length ? [] : warns, notes: errs.length ? [] : notes };
   });
   const uncovered = A.open.filter(x => !covered.has(x.key));
   return { periods, covered, uncovered };
@@ -122,7 +125,7 @@ function lessonList(list) {
 
 function renderCerts() {
   const A = skipAnalysis();
-  const auto = autoPeriods(A.openDays, A.blocked);
+  const auto = autoPeriods(A.openDays);
   const manual = Array.isArray(certPlan);
   const plan = manual ? certPlan : auto;
   const E = evalPlan(A, plan);
@@ -145,7 +148,7 @@ function renderCerts() {
   </div>`;
 
   if (!total) {
-    return `${summary}<div class="card glass"><div class="empty"><img class="empty-acc" src="${ACC.star}" alt=""><br>Пропусков пока нет — справки не нужны</div></div>${certDisclaimer()}`;
+    return `${summary}${haveCertCard()}<div class="card glass"><div class="empty"><img class="empty-acc only-light" src="${stickerNow(ST_SHIFT.certs)}" alt=""><br>Пропусков пока нет — справки не нужны</div></div>${certDisclaimer()}`;
   }
 
   const periodCards = E.periods.map((p, n) => {
@@ -162,7 +165,7 @@ function renderCerts() {
           <label class="field"><span>С</span><input type="date" data-cp="${p.i}|from" value="${esc(p.from || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
           <label class="field"><span>По</span><input type="date" data-cp="${p.i}|to" value="${esc(p.to || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
         </div>` : ''}
-      ${p.errs.map(e => `<p class="msg err">${esc(e)}</p>`).join('')}${p.warns.map(w => `<p class="msg warn">${esc(w)}</p>`).join('')}
+      ${p.errs.map(e => `<p class="msg err">${esc(e)}</p>`).join('')}${p.warns.map(w => `<p class="msg warn">${esc(w)}</p>`).join('')}${p.notes.map(w => `<p class="hint">${esc(w)}</p>`).join('')}
       ${p.inside.length && !bad ? `<details class="cert-more"><summary>Какие пары покрывает</summary>${lessonList(p.inside)}</details>` : ''}
       <div class="cert-actions">
         ${editing ? `<button class="btn" data-cpdel="${p.i}">Удалить</button><button class="btn accent" data-cpedit="-1">Готово</button>`
@@ -181,10 +184,10 @@ function renderCerts() {
   }).join('');
   const valid = closed.filter(x => x.closed === 'valid');
 
-  return `${summary}
+  return `${summary}${haveCertCard()}
     <div class="sec-head"><h2>${manual ? 'Ваш план справок' : 'Рекомендуемые справки'}</h2>
       ${manual ? '<button class="link-btn" data-cpauto>вернуть автоподбор</button>' : ''}</div>
-    ${A.open.length ? `<p class="hint sec-hint">${manual ? 'Ручной план: пересчёт идёт сразу после каждого изменения.' : 'Минимум справок: близкие даты объединены, каждая — не больше 14 дней, дни, когда вы были на парах, не захватываются.'} В полосе дней: бордовый — пропуск, светлый — уже закрыт, пустой — пар не было.</p>` : ''}
+    ${A.open.length ? `<p class="hint sec-hint">${manual ? 'Ручной план: пересчёт идёт сразу после каждого изменения.' : 'Минимум справок: пропуски в пределах 14 дней объединены в одну справку.'} В полосе дней: цветной — пропуск, с рамкой — вы были на парах, светлый — уже закрыт, пустой — пар не было.</p>` : ''}
     ${periodCards || `<div class="card glass"><div class="empty">Все пропуски закрыты</div></div>`}
     ${A.open.length || manual ? `<button class="btn add-period" data-cpadd>${ICON.plus} Добавить период</button>` : ''}
     ${uncoveredCard}
@@ -192,6 +195,43 @@ function renderCerts() {
       ${certList ? `<div class="hist">${certList}</div>` : ''}
       ${valid.length ? `<p class="hint">${valid.length} ${plural(valid.length, 'пропуск закрыт', 'пропуска закрыты', 'пропусков закрыто')} с причиной «Уважительная».</p>` : ''}</div>` : ''}
     ${certDisclaimer()}`;
+}
+/* «У меня есть справка»: вводишь даты — получаешь все пары за эти дни */
+let certIn = null; // { from, to } — пока вводим, не сохраняется
+function certInPairs() {
+  if (!certIn || !isoOk(certIn.from) || !isoOk(certIn.to) || certIn.to < certIn.from) return null;
+  return occurrences(fromIso(certIn.from), fromIso(certIn.to));
+}
+function certListText(occ) {
+  const byDay = {};
+  occ.forEach(o => (byDay[iso(o.date)] = byDay[iso(o.date)] || []).push(o));
+  return `Справка ${fmtD(fromIso(certIn.from))}${certIn.from !== certIn.to ? ' – ' + fmtD(fromIso(certIn.to)) : ''}\n` +
+    Object.values(byDay).map(l => `\n${fmtD(l[0].date)}, ${DOW_LONG[l[0].p.d].toLowerCase()}\n` + l.map(o =>
+      `${o.p.n} пара (${BELLS[o.p.n][0]}) — ${o.p.s}, ${TYPES[o.p.type].toLowerCase()}${o.p.t && TEACHERS[o.p.t] ? ', ' + TEACHERS[o.p.t].name : ''}`).join('\n')).join('\n');
+}
+function haveCertCard() {
+  if (!certIn) return `<button class="btn wide have-cert" data-ciopen>${ICON.plus} У меня уже есть справка</button>`;
+  const occ = certInPairs();
+  const len = occ ? spanDays(fromIso(certIn.from), fromIso(certIn.to)) : 0;
+  let body = '<p class="hint">Укажите даты из справки — покажу все пары за эти дни.</p>';
+  if (certIn.from && certIn.to && certIn.to < certIn.from) body = '<p class="msg err">Дата окончания раньше начала</p>';
+  else if (occ && !occ.length) body = '<p class="hint">В эти дни пар не было.</p>';
+  else if (occ) {
+    const days = new Set(occ.map(o => iso(o.date))).size;
+    const marked = occ.filter(o => skips[o.key]).length;
+    body = `<p class="cert-sub">${occ.length} ${plural(occ.length, 'пара', 'пары', 'пар')} за ${days} ${plural(days, 'день', 'дня', 'дней')} · ${len} ${plural(len, 'календарный день', 'календарных дня', 'календарных дней')}</p>
+      ${len > CERT_MAX ? `<p class="msg warn">Период длиннее 14 дней — проверьте даты</p>` : ''}
+      <div class="lessons">${occ.map(o => `<div class="ls"><span class="ls-d">${fmtDs(o.date)} · ${DOW_SHORT[o.p.d]}</span><span class="ls-s">${esc(o.p.s)}<small>${o.p.n} пара · ${BELLS[o.p.n][0]} · ${TYPES[o.p.type].toLowerCase()}${o.p.t && TEACHERS[o.p.t] ? ' · ' + esc(TEACHERS[o.p.t].name) : ''}${skips[o.key] ? ' · <em>пропуск отмечен</em>' : ''}</small></span></div>`).join('')}</div>
+      ${marked < occ.length ? `<p class="hint">При сохранении все ${occ.length} ${plural(occ.length, 'пара', 'пары', 'пар')} отметятся как пропуск по болезни и сразу закроются справкой.</p>` : ''}
+      <div class="cert-actions"><button class="btn" data-cicopy>Скопировать список</button><button class="btn accent" data-cisave>Сохранить справку</button></div>`;
+  }
+  return `<div class="card glass have-cert-card"><h3>Справка на руках</h3>
+    <div class="cert-edit">
+      <label class="field"><span>С</span><input type="date" data-ci="from" value="${esc(certIn.from || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
+      <label class="field"><span>По</span><input type="date" data-ci="to" value="${esc(certIn.to || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
+    </div>
+    ${body}
+    <div class="cert-actions"><button class="link-btn" data-ciclose>закрыть</button></div></div>`;
 }
 const certDisclaimer = () => `<p class="hint disclaimer">Это инструмент планирования: он показывает, как ваши реальные пропуски сгруппировать по справкам. Справку выдаёт врач по факту болезни — приложение не создаёт документы и оснований для них.</p>`;
 
@@ -303,7 +343,7 @@ function renderCompare() {
 }
 
 /* =====================================================================
-   СЕРИИ И АЧИВКИ
+   СЕРИИ БЕЗ ПРОПУСКОВ
    ===================================================================== */
 let exams = store.get('hp.exams', []);
 const saveExams = () => store.set('hp.exams', exams);
@@ -334,55 +374,14 @@ function attendanceStats() {
     five: exams.some(e => e.grade === '5'),
   };
 }
-const ACHS = [
-  { id: 's10', t: 'Разгон', d: '10 пар подряд без пропуска', goal: 10, v: s => s.best },
-  { id: 's25', t: 'Железный ритм', d: '25 пар подряд без пропуска', goal: 25, v: s => s.best },
-  { id: 's50', t: 'Несгибаемый', d: '50 пар подряд без пропуска', goal: 50, v: s => s.best },
-  { id: 'w1', t: 'Чистая неделя', d: 'Неделя без единого пропуска', goal: 1, v: s => s.clean },
-  { id: 'w4', t: 'Месяц без прогулов', d: '4 чистые недели подряд', goal: 4, v: s => s.wBest },
-  { id: 'early', t: 'Ранняя пташка', d: '10 первых пар в 08:30', goal: 10, v: s => s.early },
-  { id: 'p90', t: 'Девяносто', d: 'Посещаемость 90%+ после 40 пар', goal: 1, v: s => s.held >= 40 && s.pct >= 90 ? 1 : 0, p: s => `${Math.round(s.pct)}% · ${Math.min(s.held, 40)}/40 пар` },
-  { id: 'safe', t: 'Без хвостов', d: 'Ни один предмет не за чертой 25% (после 30 пар)', goal: 1, v: s => s.held >= 30 && s.safe ? 1 : 0, p: s => s.safe ? `${Math.min(s.held, 30)}/30 пар` : 'есть предмет за чертой' },
-  { id: 'paper', t: 'Бумаги в порядке', d: 'Все пропуски закрыты', goal: 1, v: s => s.allClosed ? 1 : 0, p: s => s.skipped ? 'есть незакрытые' : 'пока нет пропусков' },
-  { id: 'exam1', t: 'Первая сдача', d: 'Сдать экзамен или зачёт', goal: 1, v: s => s.passed },
-  { id: 'exam5', t: 'Отлично', d: 'Получить «5» в сессию', goal: 1, v: s => s.five ? 1 : 0 },
-];
-let achDone = store.get('hp.ach', null);
-function checkAchievements() {
-  const st = attendanceStats();
-  const first = !achDone;
-  achDone = achDone || {};
-  const fresh = ACHS.filter(a => a.v(st) >= a.goal && !achDone[a.id]);
-  if (!fresh.length && !first) return;
-  fresh.forEach(a => { achDone[a.id] = iso(today); });
-  store.set('hp.ach', achDone);
-  if (!first && fresh.length) {
-    toast(`Ачивка: ${fresh[0].t}${fresh.length > 1 ? ` и ещё ${fresh.length - 1}` : ''}`);
-    state.achFresh = fresh.map(a => a.id);
-    if (navigator.vibrate) navigator.vibrate([12, 40, 12]);
-  }
-}
-const achSeal = on => `<svg viewBox="-50 -50 100 100" aria-hidden="true"><use href="#burst" x="-50" y="-50" width="100" height="100" fill="${on ? '#642c3e' : 'rgba(255,255,255,.04)'}" stroke="${on ? '#d5d9de' : 'rgba(255,255,255,.22)'}" stroke-width="1.4"/>
-  ${on ? '<path d="M-12 1 -3 10 14 -9" fill="none" stroke="#f5f6f7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' : '<rect x="-9" y="-3" width="18" height="14" rx="3" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3"/><path d="M-5 -3v-5a5 5 0 0 1 10 0v5" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3"/>'}</svg>`;
-
 function streakCard() {
   const st = attendanceStats();
-  const got = ACHS.filter(a => (achDone && achDone[a.id]) || a.v(st) >= a.goal);
-  const tiles = ACHS.map(a => {
-    const v = a.v(st), on = (achDone && achDone[a.id]) || v >= a.goal;
-    const prog = a.p ? a.p(st) : `${Math.min(v, a.goal)}/${a.goal}`;
-    return `<div class="ach ${on ? 'on' : ''} ${state.achFresh && state.achFresh.includes(a.id) ? 'fresh' : ''}">${achSeal(on)}
-      <div><b>${a.t}</b><span>${a.d}</span>${on ? `<em>получено${achDone && achDone[a.id] ? ' ' + fmtDs(fromIso(achDone[a.id])) : ''}</em>`
-        : `<div class="bar"><i style="width:${a.goal > 1 ? Math.min(100, v / a.goal * 100) : 0}%"></i></div><em>${prog}</em>`}</div></div>`;
-  }).join('');
-  state.achFresh = null;
   return `<div class="card glass"><h3>Серии<i>без пропусков</i></h3>
     <div class="streaks">
       <div class="kpi"><b>${st.cur}</b><span>${plural(st.cur, 'пара', 'пары', 'пар')} подряд сейчас</span></div>
       <div class="kpi"><b>${st.best}</b><span>рекорд серии</span></div>
       <div class="kpi"><b>${st.wCur}</b><span>${plural(st.wCur, 'чистая неделя', 'чистые недели', 'чистых недель')} подряд</span></div>
-    </div></div>
-    <div class="card glass"><h3>Ачивки<i>${got.length} из ${ACHS.length}</i></h3><div class="ach-grid">${tiles}</div></div>`;
+    </div></div>`;
 }
 
 /* =====================================================================
@@ -430,7 +429,7 @@ function renderSession() {
   const subjOpts = MY_SUBJECTS.map(s => `<option>${esc(s)}</option>`).join('');
 
   return `${brand()}
-    <header class="page-title img-title"><div><h1><img class="title-img" src="assets/title-sessia.png" alt="Сессия" width="1600" height="585"></h1><p>Экзамены и зачёты</p></div><img class="star" src="${ACC.star}" alt=""></header>
+    <header class="page-title img-title"><div><h1><span class="title-pix">Сессия</span></h1><p>Экзамены и зачёты</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.session)}" alt=""></header>
     ${hero}
     <div class="card glass"><h3>Официальное расписание</h3>${off}</div>
     <div class="card glass"><h3>Мои экзамены и зачёты<i>${list.length ? `сдано ${passed} из ${list.length}` : ''}</i></h3>
@@ -504,7 +503,6 @@ AFTER_RENDER.push(() => {
   const anchor = app.querySelector('.days') || app.firstElementChild;
   anchor.insertAdjacentHTML('beforebegin', html);
 });
-AFTER_RENDER.push(checkAchievements);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(false); });
 setTimeout(() => checkUpdate(false), 4000);
 
@@ -519,22 +517,37 @@ document.addEventListener('click', e => {
   // справки
   if (ds.cpedit != null) {
     const i = +ds.cpedit;
-    if (i >= 0 && !Array.isArray(certPlan)) { const A = skipAnalysis(); certPlan = autoPeriods(A.openDays, A.blocked); saveCertPlan(); }
+    if (i >= 0 && !Array.isArray(certPlan)) { const A = skipAnalysis(); certPlan = autoPeriods(A.openDays); saveCertPlan(); }
     state.certEdit = i >= 0 ? i : null; render(); return;
   }
   if (ds.cpdel != null) { certPlan.splice(+ds.cpdel, 1); saveCertPlan(); state.certEdit = null; render(); toast('Период удалён'); return; }
   if ('cpadd' in ds) {
     const A = skipAnalysis();
-    const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays, A.blocked);
+    const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
     const E = evalPlan(A, plan);
     const start = E.uncovered[0] ? E.uncovered[0].iso : iso(today);
     certPlan = [...plan, { from: start, to: start }]; saveCertPlan();
     state.certEdit = certPlan.length - 1; render(); return;
   }
+  if ('ciopen' in ds) { certIn = { from: '', to: '' }; render(); return; }
+  if ('ciclose' in ds) { certIn = null; render(); return; }
+  if ('cicopy' in ds) {
+    const occ = certInPairs(); if (!occ || !occ.length) return;
+    const txt = certListText(occ);
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Список скопирован'), () => toast('Не удалось скопировать'));
+    return;
+  }
+  if ('cisave' in ds) {
+    const occ = certInPairs(); if (!occ) return;
+    occ.forEach(o => { if (!skips[o.key]) skips[o.key] = { r: 'ill', at: Date.now() }; });
+    saveSkips();
+    certs.push({ id: uid(), from: certIn.from, to: certIn.to, at: Date.now() }); saveCerts();
+    certIn = null; render(); toast('Справка сохранена — пропуски закрыты'); return;
+  }
   if ('cpauto' in ds) { certPlan = null; saveCertPlan(); state.certEdit = null; render(); toast('Автоподбор включён'); return; }
   if (ds.cpdone != null) {
     const A = skipAnalysis();
-    const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays, A.blocked);
+    const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
     const p = plan[+ds.cpdone];
     if (!p) return;
     certs.push({ id: uid(), from: p.from, to: p.to, at: Date.now() }); saveCerts();
@@ -573,6 +586,11 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset && el.dataset.ci && certIn) {
+    certIn[el.dataset.ci] = el.value;
+    if (el.dataset.ci === 'from' && el.value && (!certIn.to || certIn.to < el.value)) certIn.to = el.value;
+    render(); return;
+  }
   if (el.dataset && el.dataset.cp) {
     const [i, f] = el.dataset.cp.split('|');
     if (!certPlan || !certPlan[+i]) return;
@@ -592,3 +610,92 @@ document.addEventListener('submit', e => {
   exams.push({ id: uid(), s, kind: state.xKind || 'exam', date, time: document.getElementById('x-t').value, room: document.getElementById('x-r').value.trim(), grade: null });
   saveExams(); render(); toast('Добавлено');
 });
+
+/* =====================================================================
+   «СЕЙЧАС / ДАЛЬШЕ» — верхний блок на вкладке «Пары»
+   Пары, отмеченные «не пойду», пропускаются.
+   ===================================================================== */
+function dayPairs(d) {
+  if (d.getDay() === 0 || HOLIDAYS.has(iso(d)) || d < SEM_START || d > SEM_END) return [];
+  return pairsFor(dow(d), weekNo(d))
+    .map(p => ({ p, d, key: iso(d) + '|' + p.n, start: at(d, BELLS[p.n][0]), end: at(d, BELLS[p.n][1]) }))
+    .filter(o => !skips[o.key]);
+}
+const minsTo = (a, b) => Math.max(0, Math.round((b - a) / 6e4));
+const pairInfo = o => `<b class="nc-title">${esc(o.p.s)}</b>
+  <span class="nc-meta"><span class="tag ${o.p.type}">${TYPES[o.p.type]}</span><span class="room">${esc(o.p.room || '—')}</span>${o.p.t && TEACHERS[o.p.t] ? `<span>${esc(TEACHERS[o.p.t].name)}</span>` : ''}</span>`;
+function nowCard() {
+  const card = nowCardInner();
+  return card ? `<section class="stage"><img class="daily only-light" src="${stickerOfDay()}" alt="">${card}</section>` : '';
+}
+function nowCardInner() {
+  const t0 = now();
+  const todays = dayPairs(today);
+  const cur = todays.find(o => o.start <= t0 && t0 < o.end);
+  const next = todays.find(o => o.start > t0);
+  const goto = `data-gotoday`;
+  if (cur) {
+    const pct = Math.min(100, (t0 - cur.start) / (cur.end - cur.start) * 100);
+    return `<button class="now-card glass live" ${goto} aria-label="Текущая пара">
+      <span class="nc-head"><i class="pulse"></i>Сейчас · ${cur.p.n} пара<em>осталось ${fmtDur(minsTo(t0, cur.end))}</em></span>
+      ${pairInfo(cur)}
+      <span class="nc-bar"><i style="width:${pct.toFixed(1)}%"></i></span>
+      <span class="nc-times"><span>${BELLS[cur.p.n][0]}</span><span>${BELLS[cur.p.n][1]}</span></span>
+      ${next ? `<span class="nc-next">Дальше ${next.start - cur.end > 15 * 6e4 ? `после окна ${fmtDur(minsTo(cur.end, next.start))}` : ''} · <b>${BELLS[next.p.n][0]}</b> ${esc(next.p.s)} · ${esc(next.p.room || '')}</span>` : '<span class="nc-next">Это последняя пара сегодня</span>'}
+    </button>`;
+  }
+  if (next) {
+    const inWindow = todays.some(o => o.end <= t0);
+    return `<button class="now-card glass" ${goto} aria-label="Следующая пара">
+      <span class="nc-head">${inWindow ? 'Окно · дальше' : 'Первая пара'}<em>через ${fmtDur(minsTo(t0, next.start))}</em></span>
+      <span class="nc-row"><span class="nc-big">${BELLS[next.p.n][0]}</span><span class="nc-col">${pairInfo(next)}</span></span>
+    </button>`;
+  }
+  // на сегодня всё — ищем ближайший учебный день
+  for (let i = 1; i <= 14; i++) {
+    const d = addDays(today, i);
+    const ps = dayPairs(d);
+    if (!ps.length) continue;
+    const f = ps[0];
+    const when = i === 1 ? 'Завтра' : `${DOW_LONG[dow(d)]}, ${fmtDs(d)}`;
+    return `<button class="now-card glass calm" data-goto="${iso(d)}" aria-label="Ближайшая пара">
+      <span class="nc-head">${todays.length ? 'На сегодня всё' : 'Сегодня пар нет'}<em>${when}</em></span>
+      <span class="nc-row"><span class="nc-big">${BELLS[f.p.n][0]}</span><span class="nc-col">${pairInfo(f)}</span></span>
+    </button>`;
+  }
+  return '';
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-gotoday],[data-goto]');
+  if (!t) return;
+  const d = t.dataset.goto ? fromIso(t.dataset.goto) : today;
+  state.weekOffset = Math.round((mondayOf(d) - baseMonday) / (7 * DAY_MS));
+  state.day = dow(d) === 6 ? 0 : dow(d);
+  render();
+});
+
+/* переключение темы: светлая ↔ тёмная (хром-готика) */
+// Темы: light — светлая, night — тёмная (обе в стиле со стикерами, theme-light.css).
+const THEMES = ['light', 'night'];
+const THEME_NAMES = { light: 'Светлая тема', night: 'Тёмная тема' };
+const THEME_COLORS = { light: '#efefec', night: '#121316' };
+function applyTheme(t) {
+  if (t === 'dark') t = 'night'; // бывшая «готика» → тёмная
+  if (!THEMES.includes(t)) t = 'light';
+  const r = document.documentElement;
+  r.dataset.theme = t;
+  r.dataset.skin = 'st';
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', THEME_COLORS[t]);
+  return t;
+}
+store.set('hp.theme', applyTheme(store.get('hp.theme', 'light')));
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-themetoggle]')) return;
+  const t = document.documentElement.dataset.theme === 'light' ? 'night' : 'light';
+  store.set('hp.theme', t); applyTheme(t); render();
+  toast(THEME_NAMES[t]);
+});
+
+// ачивки убраны — чистим их старые данные
+try { localStorage.removeItem('hp.ach'); } catch (e) {}

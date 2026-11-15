@@ -5,21 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Хроника пар</title>
 <meta name="description" content="Расписание, пропуски, статистика посещаемости и поиск преподавателей">
-<meta name="theme-color" content="#090a0c">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#efefec">
+<meta name="color-scheme" content="light dark">
+<script>/* тема до загрузки стилей — без мигания */(function(){var t="light";try{t=JSON.parse(localStorage.getItem("hp.theme"))||"light"}catch(e){}var r=document.documentElement;if(t==="dark")t="night";r.dataset.theme=t;r.dataset.skin="st"})()</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Хроника">
 <meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@400;500;600&family=Roboto+Condensed:wght@400;500;600&display=swap">
-<link rel="preload" href="assets/deutsch-gothic.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Pixelify+Sans:wght@400;500;700&family=Oswald:wght@400;500;600&family=Roboto+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="theme-light.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -31,7 +32,6 @@
   </defs>
 </svg>
 
-<div class="bg" aria-hidden="true"><div class="fog"></div><canvas id="silk"></canvas><div class="grain"></div></div>
 <main class="app" id="app"></main>
 <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
 
@@ -55,5 +55,7 @@
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script src="more.js"></script>
+<script src="swipe.js"></script>
+<script src="mobile.js"></script>
 </body>
 </html>
