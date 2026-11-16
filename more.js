@@ -38,6 +38,15 @@ let certs = store.get('hp.certs', []);        // оформленные: [{id, f
 let certPlan = store.get('hp.certPlan', null); // ручной план [{from, to}] или null — автоподбор
 const saveCerts = () => store.set('hp.certs', certs);
 const saveCertPlan = () => store.set('hp.certPlan', certPlan);
+// свёрнутые/раскрытые блоки в «Справках»: по умолчанию всё свёрнуто, чтобы раздел не растягивался
+state.fold = {};
+state.foldAnim = null;
+const isOpen = k => !!state.fold[k];
+const foldBody = (k, html) => isOpen(k) ? `<div class="fold-body${state.foldAnim === k ? ' fold-in' : ''}">${html}</div>` : '';
+const CHEV = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+AFTER_RENDER.push(() => { state.foldAnim = null; });
+// номера справок сдвигаются после удаления/получения — раскрытость карточек сбрасываем
+const resetCertFold = () => Object.keys(state.fold).forEach(k => { if (/^c\d/.test(k)) delete state.fold[k]; });
 
 function skipAnalysis(t0 = now()) {
   const held = heldPairs(t0);
@@ -108,6 +117,8 @@ function evalPlan(A, plan) {
   return { periods, covered, uncovered };
 }
 
+const STRIP_LEGEND = `<div class="strip-legend"><span><i class="s-skip"></i>пропуск</span><span><i class="s-busy"></i>были на парах</span><span><i class="s-closed"></i>закрыт</span><span><i class="s-free"></i>пар не было</span></div>`;
+const foldHead = (k, title, count) => `<button class="fold-btn fold-head" data-fold="${k}" aria-expanded="${isOpen(k)}"><span>${title}</span><i>${count}</i>${CHEV}</button>`;
 function dayStrip(p, A) {
   if (!isoOk(p.from) || !isoOk(p.to) || p.to < p.from || p.len > 31) return '';
   const cells = [];
@@ -156,11 +167,13 @@ function renderCerts() {
     const bad = p.errs.length;
     const range = isoOk(p.from) && isoOk(p.to)
       ? `${fmtD(fromIso(p.from))}${p.from !== p.to ? ' – ' + fmtD(fromIso(p.to)) : ''}` : 'Период не задан';
-    return `<div class="card glass cert ${bad ? 'bad' : ''}">
-      <div class="cert-head"><span class="cert-no">Справка ${n + 1}</span>${!bad ? `<span class="cert-len">${p.len} ${plural(p.len, 'день', 'дня', 'дней')} из 14</span>` : ''}</div>
-      <div class="cert-range">${range}</div>
-      ${!bad && p.inside.length ? `<p class="cert-sub">Закроет ${p.inside.length} ${plural(p.inside.length, 'пропуск', 'пропуска', 'пропусков')} за ${new Set(p.inside.map(x => x.iso)).size} ${plural(new Set(p.inside.map(x => x.iso)).size, 'день', 'дня', 'дней')}</p>` : ''}
-      ${dayStrip(p, A)}
+    const key = 'c' + p.i, forced = editing || bad, open = forced || isOpen(key);
+    const nDays = new Set(p.inside.map(x => x.iso)).size;
+    const head = `<span class="cert-top"><span class="cert-no">Справка ${n + 1}</span>${!bad ? `<span class="cert-len">${p.len} ${plural(p.len, 'день', 'дня', 'дней')} из 14</span>` : ''}</span>
+        <span class="cert-range">${range}</span>
+        ${!bad && p.inside.length ? `<span class="cert-sub">Закроет ${p.inside.length} ${plural(p.inside.length, 'пропуск', 'пропуска', 'пропусков')} за ${nDays} ${plural(nDays, 'день', 'дня', 'дней')}${p.warns.length ? ' · <em>есть замечания</em>' : ''}</span>` : ''}`;
+    const body = `
+      ${dayStrip(p, A)}${dayStrip(p, A) ? STRIP_LEGEND : ''}
       ${editing ? `<div class="cert-edit">
           <label class="field"><span>С</span><input type="date" data-cp="${p.i}|from" value="${esc(p.from || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
           <label class="field"><span>По</span><input type="date" data-cp="${p.i}|to" value="${esc(p.to || '')}" min="${iso(SEM_START)}" max="${iso(SEM_END)}"></label>
@@ -170,11 +183,14 @@ function renderCerts() {
       <div class="cert-actions">
         ${editing ? `<button class="btn" data-cpdel="${p.i}">Удалить</button><button class="btn accent" data-cpedit="-1">Готово</button>`
           : `<button class="btn" data-cpedit="${p.i}">Изменить</button>${!bad && p.inside.length ? `<button class="btn accent" data-cpdone="${p.i}">Справка получена</button>` : ''}`}
-      </div></div>`;
+      </div>`;
+    return `<div class="card glass cert ${bad ? 'bad' : ''} ${open ? 'open' : ''}">
+      ${forced ? `<div class="cert-head-static">${head}</div>` : `<button class="fold-btn cert-toggle" data-fold="${key}" aria-expanded="${open}"><span class="cert-head-txt">${head}</span>${CHEV}</button>`}
+      ${forced ? `<div class="fold-body">${body}</div>` : foldBody(key, body)}</div>`;
   }).join('');
 
-  const uncoveredCard = E.uncovered.length ? `<div class="card glass"><h3>Не покрыто справками<i>${E.uncovered.length}</i></h3>${lessonList(E.uncovered)}
-      <p class="hint">Добавьте период или верните автоподбор.</p></div>` : '';
+  const uncoveredCard = E.uncovered.length ? `<div class="card glass fold-card ${isOpen('unc') ? 'open' : ''}">${foldHead('unc', 'Не покрыто справками', E.uncovered.length)}
+      ${foldBody('unc', `${lessonList(E.uncovered)}<p class="hint">Добавьте период или верните автоподбор.</p>`)}</div>` : '';
 
   const certList = certs.slice().sort((a, b) => a.from.localeCompare(b.from)).map(c => {
     const n = A.all.filter(x => x.cert && x.cert.id === c.id).length;
@@ -187,13 +203,13 @@ function renderCerts() {
   return `${summary}${haveCertCard()}
     <div class="sec-head"><h2>${manual ? 'Ваш план справок' : 'Рекомендуемые справки'}</h2>
       ${manual ? '<button class="link-btn" data-cpauto>вернуть автоподбор</button>' : ''}</div>
-    ${A.open.length ? `<p class="hint sec-hint">${manual ? 'Ручной план: пересчёт идёт сразу после каждого изменения.' : 'Минимум справок: пропуски в пределах 14 дней объединены в одну справку.'} В полосе дней: цветной — пропуск, с рамкой — вы были на парах, светлый — уже закрыт, пустой — пар не было.</p>` : ''}
+    ${A.open.length ? `<p class="hint sec-hint">${manual ? 'Ручной план — пересчёт сразу после каждого изменения.' : 'Пропуски в пределах 14 дней объединены в одну справку.'} Нажмите на справку, чтобы раскрыть.</p>` : ''}
     ${periodCards || `<div class="card glass"><div class="empty">Все пропуски закрыты</div></div>`}
     ${A.open.length || manual ? `<button class="btn add-period" data-cpadd>${ICON.plus} Добавить период</button>` : ''}
     ${uncoveredCard}
-    ${closed.length ? `<div class="card glass"><h3>Закрыто<i>${closed.length}</i></h3>
-      ${certList ? `<div class="hist">${certList}</div>` : ''}
-      ${valid.length ? `<p class="hint">${valid.length} ${plural(valid.length, 'пропуск закрыт', 'пропуска закрыты', 'пропусков закрыто')} с причиной «Уважительная».</p>` : ''}</div>` : ''}
+    ${closed.length ? `<div class="card glass fold-card ${isOpen('closed') ? 'open' : ''}">${foldHead('closed', 'Закрыто', closed.length)}
+      ${foldBody('closed', `${certList ? `<div class="hist">${certList}</div>` : ''}
+      ${valid.length ? `<p class="hint">${valid.length} ${plural(valid.length, 'пропуск закрыт', 'пропуска закрыты', 'пропусков закрыто')} с причиной «Уважительная».</p>` : ''}`)}</div>` : ''}
     ${certDisclaimer()}`;
 }
 /* «У меня есть справка»: вводишь даты — получаешь все пары за эти дни */
@@ -515,12 +531,13 @@ document.addEventListener('click', e => {
   const ds = t.dataset;
   if (ds.sub) { state.sub = ds.sub; store.set('hp.skipsSub', ds.sub); state.certEdit = null; render(); return; }
   // справки
+  if (ds.fold) { state.fold[ds.fold] = !state.fold[ds.fold]; state.foldAnim = state.fold[ds.fold] ? ds.fold : null; render(); return; }
   if (ds.cpedit != null) {
     const i = +ds.cpedit;
     if (i >= 0 && !Array.isArray(certPlan)) { const A = skipAnalysis(); certPlan = autoPeriods(A.openDays); saveCertPlan(); }
     state.certEdit = i >= 0 ? i : null; render(); return;
   }
-  if (ds.cpdel != null) { certPlan.splice(+ds.cpdel, 1); saveCertPlan(); state.certEdit = null; render(); toast('Период удалён'); return; }
+  if (ds.cpdel != null) { resetCertFold(); certPlan.splice(+ds.cpdel, 1); saveCertPlan(); state.certEdit = null; render(); toast('Период удалён'); return; }
   if ('cpadd' in ds) {
     const A = skipAnalysis();
     const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
@@ -544,12 +561,13 @@ document.addEventListener('click', e => {
     certs.push({ id: uid(), from: certIn.from, to: certIn.to, at: Date.now() }); saveCerts();
     certIn = null; render(); toast('Справка сохранена — пропуски закрыты'); return;
   }
-  if ('cpauto' in ds) { certPlan = null; saveCertPlan(); state.certEdit = null; render(); toast('Автоподбор включён'); return; }
+  if ('cpauto' in ds) { resetCertFold(); certPlan = null; saveCertPlan(); state.certEdit = null; render(); toast('Автоподбор включён'); return; }
   if (ds.cpdone != null) {
     const A = skipAnalysis();
     const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
     const p = plan[+ds.cpdone];
     if (!p) return;
+    resetCertFold();
     certs.push({ id: uid(), from: p.from, to: p.to, at: Date.now() }); saveCerts();
     if (Array.isArray(certPlan)) { certPlan.splice(+ds.cpdone, 1); saveCertPlan(); }
     state.certEdit = null; render(); toast('Справка отмечена — пропуски закрыты'); return;

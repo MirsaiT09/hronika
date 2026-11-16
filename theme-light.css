@@ -320,3 +320,13 @@
 [data-skin="st"] .slot .sd { color: var(--ink-3); }
 [data-skin="st"] .slot .sd b, [data-skin="st"] .slot .ss span:first-child { color: var(--ink); }
 [data-skin="st"] .slot .ss span { color: var(--ink-2); }
+
+/* справки: свёрнутые карточки и легенда полосы дней */
+[data-skin="st"] .cert-top { color: var(--ink-3); }
+[data-skin="st"] .cert-sub em { color: var(--acc-text); }
+[data-skin="st"] .fold-head { color: var(--ink); }
+[data-skin="st"] .strip-legend { color: var(--ink-3); }
+[data-skin="st"] .strip-legend i { border-color: rgb(var(--ik) / .1); background: rgb(var(--sf) / .6); }
+[data-skin="st"] .strip-legend i.s-skip { background: var(--accent); border-color: var(--accent); }
+[data-skin="st"] .strip-legend i.s-busy { border-color: var(--ink); border-style: dashed; }
+[data-skin="st"] .strip-legend i.s-closed { background: rgb(var(--ik) / .14); }

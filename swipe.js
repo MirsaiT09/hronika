@@ -30,10 +30,13 @@ const tabIdx = () => Math.max(0, TAB_ORDER.indexOf(state.tab));
 
 // направление анимации экрана при смене вкладки (и тапом, и свайпом)
 let prevTab = state.tab;
+let swipeNav = false; // экран сменили свайпом — въезжает весь экран целиком, без отдельного сдвига карточек
 AFTER_RENDER.push(() => {
   const a = TAB_ORDER.indexOf(prevTab), b = TAB_ORDER.indexOf(state.tab);
   app.classList.remove('slide-l', 'slide-r');
-  if (a !== b && a >= 0 && b >= 0) { void app.offsetWidth; app.classList.add(b > a ? 'slide-r' : 'slide-l'); }
+  app.classList.toggle('swiped', swipeNav);
+  if (!swipeNav && a !== b && a >= 0 && b >= 0) { void app.offsetWidth; app.classList.add(b > a ? 'slide-r' : 'slide-l'); }
+  swipeNav = false;
   prevTab = state.tab;
   placeInd(tabIdx(), true);
 });
@@ -72,32 +75,42 @@ document.addEventListener('touchmove', e => {
   const hasNext = back || (dx < 0 ? i < TAB_ORDER.length - 1 : i > 0);
   // у края — сопротивление, как у резинки
   g.dx = hasNext ? dx : dx * 0.25;
-  app.style.transform = `translateX(${g.dx * (hasNext ? 0.35 : 0.5)}px)`;
-  app.style.opacity = String(1 - Math.min(Math.abs(g.dx) / W, 1) * (hasNext ? 0.5 : 0.1));
+  app.style.transform = `translateX(${g.dx * (hasNext ? 0.6 : 0.5)}px)`;
+  app.style.opacity = String(1 - Math.min(Math.abs(g.dx) / W, 1) * (hasNext ? 0.35 : 0.05));
   const prog = hasNext && !back ? Math.min(Math.abs(dx) / (W * 0.6), 1) : 0;
   placeInd(i + (dx < 0 ? prog : -prog), false);
 }, { passive: true });
 
+// dir = 1 — новый экран въезжает справа, -1 — слева
+function commitSwipe(dir, change) {
+  app.classList.add('dragging');           // без анимации ставим новый экран сбоку…
+  swipeNav = true;
+  change();
+  app.style.transform = `translateX(${dir * Math.min(110, innerWidth * 0.28)}px)`;
+  app.style.opacity = '0';
+  void app.offsetWidth;
+  app.classList.remove('dragging');        // …и плавно доводим его в центр
+  app.style.transform = ''; app.style.opacity = '';
+}
 function endSwipe() {
   if (!g || g.dir !== 'h') { g = null; return; }
   const i = tabIdx(), W = innerWidth, v = Math.abs(g.dx) / Math.max(1, Date.now() - g.t);
   const next = g.dx < 0 ? i + 1 : i - 1;
   const far = Math.abs(g.dx) > W * 0.22 || (v > 0.45 && Math.abs(g.dx) > 30);
   if (far && g.dx > 0 && state.tab === 'teachers' && state.teacher) {
-    app.classList.remove('dragging'); app.style.transform = ''; app.style.opacity = ''; g = null;
-    state.teacher = null; prevTab = 'session'; // экран въедет слева, как «назад» в iOS
-    render(); window.scrollTo(0, 0); return;
+    g = null;
+    commitSwipe(-1, () => { state.teacher = null; render(); window.scrollTo(0, 0); }); // «назад», как в iOS
+    return;
   }
   const go = far && next >= 0 && next < TAB_ORDER.length;
-  app.classList.remove('dragging');
-  app.style.transform = ''; app.style.opacity = '';
+  const dir = g.dx < 0 ? 1 : -1;
   g = null;
   if (go) {
-    state.tab = TAB_ORDER[next]; state.teacher = null;
-    window.scrollTo(0, 0);
-    render();
+    commitSwipe(dir, () => { state.tab = TAB_ORDER[next]; state.teacher = null; window.scrollTo(0, 0); render(); });
     if (navigator.vibrate) navigator.vibrate(8);
   } else {
+    app.classList.remove('dragging');
+    app.style.transform = ''; app.style.opacity = '';   // не дотянули — мягко возвращаемся
     placeInd(i, true);
   }
 }
