@@ -12,17 +12,18 @@ ind.setAttribute('aria-hidden', 'true');
 navIn.prepend(ind);
 
 // положение таблетки: под вкладкой i (можно дробное — между двумя вкладками)
-function placeInd(pos, animate = true) {
-  const b = tabBtns();
+// geo — размеры вкладок, замеренные один раз на жест (замер на каждом кадре заставлял iPhone пересчитывать раскладку)
+const tabGeo = () => tabBtns().map(b => ({ l: b.offsetLeft, w: b.offsetWidth, t: b.offsetTop, h: b.offsetHeight }));
+function placeInd(pos, animate = true, geo) {
+  const b = geo || tabGeo();
   if (!b.length) return;
   const i0 = Math.max(0, Math.min(b.length - 1, Math.floor(pos))), i1 = Math.min(b.length - 1, i0 + 1), f = pos - i0;
-  const x = b[i0].offsetLeft + (b[i1].offsetLeft - b[i0].offsetLeft) * f;
-  const w = b[i0].offsetWidth + (b[i1].offsetWidth - b[i0].offsetWidth) * f;
+  const x = b[i0].l + (b[i1].l - b[i0].l) * f;
+  const w = b[i0].w + (b[i1].w - b[i0].w) * f;
   ind.classList.toggle('instant', !animate);
-  ind.style.transform = `translateX(${x}px)`;
+  ind.style.transform = `translate3d(${x}px,0,0)`;
   ind.style.width = `${w}px`;
-  ind.style.top = `${b[i0].offsetTop}px`;
-  ind.style.height = `${b[i0].offsetHeight}px`;
+  if (!geo) { ind.style.top = `${b[i0].t}px`; ind.style.height = `${b[i0].h}px`; }
   // растяжка во время движения — «живая» таблетка
   ind.classList.toggle('moving', !animate && f > 0.02 && f < 0.98);
 }
@@ -42,6 +43,8 @@ AFTER_RENDER.push(() => {
 });
 addEventListener('resize', () => placeInd(tabIdx(), false));
 app.addEventListener('animationend', e => { if (e.target.parentElement === app) placeInd(tabIdx(), true); });
+// слой для движения экрана держим только пока он едет — постоянный слой на всю страницу съедает память iPhone
+app.addEventListener('transitionend', e => { if (e.target === app && !app.classList.contains('dragging')) app.classList.remove('moving'); });
 document.fonts && document.fonts.ready.then(() => placeInd(tabIdx(), false));
 requestAnimationFrame(() => placeInd(tabIdx(), false));
 
@@ -67,7 +70,7 @@ document.addEventListener('touchmove', e => {
   if (!g.dir) {
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
     g.dir = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'h' : 'v';
-    if (g.dir === 'h') app.classList.add('dragging');
+    if (g.dir === 'h') { app.classList.add('dragging', 'moving'); g.geo = tabGeo(); }
   }
   if (g.dir !== 'h') return;
   const i = tabIdx(), W = innerWidth;
@@ -75,23 +78,25 @@ document.addEventListener('touchmove', e => {
   const hasNext = back || (dx < 0 ? i < TAB_ORDER.length - 1 : i > 0);
   // у края — сопротивление, как у резинки
   g.dx = hasNext ? dx : dx * 0.25;
-  app.style.transform = `translateX(${g.dx * (hasNext ? 0.6 : 0.5)}px)`;
+  app.style.transform = `translate3d(${g.dx * (hasNext ? 0.6 : 0.5)}px,0,0)`;
   app.style.opacity = String(1 - Math.min(Math.abs(g.dx) / W, 1) * (hasNext ? 0.35 : 0.05));
   const prog = hasNext && !back ? Math.min(Math.abs(dx) / (W * 0.6), 1) : 0;
-  placeInd(i + (dx < 0 ? prog : -prog), false);
+  placeInd(i + (dx < 0 ? prog : -prog), false, g.geo);
 }, { passive: true });
 
 // dir = 1 — новый экран въезжает справа, -1 — слева
 function commitSwipe(dir, change) {
-  app.classList.add('dragging');           // без анимации ставим новый экран сбоку…
+  app.classList.add('dragging', 'moving'); // без анимации ставим новый экран сбоку…
   swipeNav = true;
   change();
-  app.style.transform = `translateX(${dir * Math.min(110, innerWidth * 0.28)}px)`;
+  app.style.transform = `translate3d(${dir * Math.min(110, innerWidth * 0.28)}px,0,0)`;
   app.style.opacity = '0';
   void app.offsetWidth;
   app.classList.remove('dragging');        // …и плавно доводим его в центр
   app.style.transform = ''; app.style.opacity = '';
+  settle();
 }
+const settle = () => setTimeout(() => { if (!app.classList.contains('dragging')) app.classList.remove('moving'); }, 650); // если transitionend не придёт
 function endSwipe() {
   if (!g || g.dir !== 'h') { g = null; return; }
   const i = tabIdx(), W = innerWidth, v = Math.abs(g.dx) / Math.max(1, Date.now() - g.t);
@@ -112,6 +117,7 @@ function endSwipe() {
     app.classList.remove('dragging');
     app.style.transform = ''; app.style.opacity = '';   // не дотянули — мягко возвращаемся
     placeInd(i, true);
+    settle();
   }
 }
 document.addEventListener('touchend', endSwipe, { passive: true });

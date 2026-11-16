@@ -15,9 +15,14 @@ const SEM_END = new Date(...D.semester.lastDay);
 const LIMIT = 0.25; // доля пропусков, после которой предмет «горит»
 
 /* ---------- хранилище ---------- */
+// отметки привязаны к своей группе: у каждой группы свои пропуски, справки, заметки.
+// В режиме просмотра чужой группы ничего из этого не читается и не пишется.
+const VIEWING = !!D.viewing;
+const GKEYS = new Set(['hp.skips', 'hp.notes', 'hp.certs', 'hp.certPlan', 'hp.certSubj', 'hp.cmpSel', 'hp.cmpColors', 'hp.exams', 'hp.schedSnap', 'hp.work', 'skips', 'notes_v2']);
+const skey = k => (GKEYS.has(k) ? k + (D.ownKey || '') : k);
 const store = {
-  get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  get(k, def) { if (VIEWING && GKEYS.has(k)) return def; try { const v = localStorage.getItem(skey(k)); return v ? JSON.parse(v) : def; } catch { return def; } },
+  set(k, v) { if (VIEWING && GKEYS.has(k)) return; try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
 };
 let skips = store.get('hp.skips', null);
 if (!skips) { // перенос отметок из прототипа
@@ -54,15 +59,18 @@ const state = {
   tab: 'pairs', weekOffset: 0, day: today.getDay() === 0 ? 0 : dow(today),
   teacher: null, query: '', tWeek: 0, tDay: today.getDay() === 0 ? 0 : dow(today),
   period: 'sem', pOffset: 0, justStamped: null,
-  sub: store.get('hp.skipsSub', 'stats'), // Прогулы: stats | certs | cmp
+  sub: ({ cmp: 'certs' })[store.get('hp.skipsSub', 'stats')] || store.get('hp.skipsSub', 'stats'), // Прогулы: stats | certs | work (сравнение — окно в «Справках»)
 };
 
 /* ---------- расписание ---------- */
 const MY = GROUP.id || GROUP.group;
 // идёт ли занятие на неделе wn: чётность + пометки «с 3 нед.», «до 12 нед.», «1,3,5 нед.»
-const active = (p, wn) => (p.w === 'both' || p.w === parityOf(wn)) && (!p.from || wn >= p.from) && (!p.to || wn <= p.to) && (!p.weeks || p.weeks.includes(wn));
+const active = (p, wn) => p.wk ? p.wk === wn : (p.w === 'both' || p.w === parityOf(wn)) && (!p.from || wn >= p.from) && (!p.to || wn <= p.to) && (!p.weeks || p.weeks.includes(wn));
 const weekNote = p => p.weeks ? `${p.weeks.join(', ')} нед.` : p.from && p.to ? `${p.from}–${p.to} нед.` : p.from ? `с ${p.from} нед.` : p.to ? `до ${p.to} нед.` : '';
-const grpLabel = g => { const [c, n] = String(g).split('-'); return n ? `${c.startsWith('м') ? 'маг ' + c.slice(1) : c} к · гр. ${n}` : `гр. ${g}`; };
+const PROG_SHORT = { '': '', с: 'спец ', м: 'маг ', оз: 'очно-заоч. ', з: 'заоч. ', сз: 'спец заоч. ', мз: 'маг заоч. ', моз: 'маг очно-заоч. ' };
+// группа бывает с институтом: «ИЦТМС|3-5» (в расписании преподавателя) — чужой институт подписываем
+const grpLabel = g => { const m = String(g).match(/^(?:([^|]+)\|)?(\D*)(\d+)-(.+)$/); if (!m) return `гр. ${g}`; return `${m[1] && m[1] !== GROUP.inst ? m[1] + ' · ' : ''}${PROG_SHORT[m[2]] ?? ''}${m[3]} к · гр. ${m[4]}`; };
+SCHEDULE.forEach(p => { if (p.date) p.wk = weekNo(fromIso(p.date)); }); // заочка: пара в конкретную дату
 const BY_T = {};
 SCHEDULE.forEach(p => { if (p.t) (BY_T[p.t] = BY_T[p.t] || []).push(p); });
 const MINE = SCHEDULE.filter(p => p.g === MY);
@@ -89,7 +97,9 @@ const initials = name => name.split(' ')[0][0];
 const plural = (n, a, b, c) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c; };
 const bldgOf = room => { const code = (room.split('/')[1] || '').trim(); return BUILDINGS[code] ? { code, ...BUILDINGS[code] } : null; };
 const ICON = {
+  cal: '<svg class="cal-ic" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  work: '<svg viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="17" height="12" rx="2.5"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2M3.5 13h17"/></svg>',
   undo: '<svg viewBox="0 0 24 24"><path d="M4 9h11a5 5 0 0 1 0 10H9"/><path d="M8 5 4 9l4 4"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   left: '<svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
@@ -108,7 +118,7 @@ const stickerNow = shift => stickerOfDay(dayStart(now()), shift); // «сего�
 const ST_SHIFT = { brand: 3, teachers: 11, where: 17, skips: 23, empty: 29, certs: 31, session: 37 };
 const THEME_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17Z" fill="currentColor"/></svg>';
 const brand = () => `<div class="brand"><img class="only-light brand-st" src="${stickerNow(ST_SHIFT.brand)}" alt="">
-  <span class="brand-end"><span class="grp-chip only-light"><i></i>${esc(GROUP.inst || '')} · гр. ${esc(GROUP.group || '')}</span>
+  <span class="brand-end"><button class="grp-chip only-light${VIEWING ? ' viewing' : ''}" data-grp aria-label="Сменить группу"><i></i>${esc(GROUP.inst || '')} · гр. ${esc(GROUP.group || '')}</button>
   <button class="theme-btn" data-themetoggle aria-label="Сменить тему">${THEME_ICON}</button></span></div>`;
 // наклейка-«печать» пропуска: своя для каждой пары (по дате и номеру), не меняется при перерисовке
 const stampOf = key => { let h = 7; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return ST(STICKERS[h % STICKERS.length]); };
@@ -188,12 +198,12 @@ function renderPairs() {
         
       </div>
       <div class="divider"></div>
-      <span class="meta">${DOW_LONG[state.day]}, ${date.getDate()} ${MONTHS[date.getMonth()]} <i>·</i> ${GROUP.inst} <i>·</i> гр. ${GROUP.group}</span>
+      <span class="meta">${DOW_LONG[state.day]}, ${date.getDate()} ${MONTHS[date.getMonth()]} <i>·</i> <button class="meta-grp" data-grp aria-label="Сменить группу">${esc(GROUP.inst)} · ${esc(grpLabel(GROUP.id))}</button></span>
     </header>
     ${state.weekOffset === 0 && typeof nowCard === 'function' ? nowCard() : ''}
     <div class="week glass">
-      <div class="week-label"><span class="week-no">${wn}</span>
-        <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span></div>
+      <button class="week-label" data-cal aria-label="Открыть календарь"><span class="week-no">${wn}</span>
+        <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span>${ICON.cal}</button>
       <div class="arrows">
         ${state.weekOffset ? `<button class="btn round" data-week="0" aria-label="К текущей неделе">${ICON.undo}</button>` : ''}
         <button class="btn round" data-week="-1" aria-label="Предыдущая неделя">${ICON.left}</button>
@@ -226,16 +236,39 @@ const dayLabel = d => {
   return diff === 0 ? 'сегодня' : diff === 1 ? 'завтра' : `${DOW_LONG[dow(d)].toLowerCase()}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 };
 
+/* все преподаватели вуза: data/teachers.js грузится один раз, при первом открытии «Преподов» */
+let allT = 'no'; // no | loading | ok | fail
+function loadAllTeachers() {
+  if (allT === 'loading' || allT === 'ok') return;
+  allT = 'loading';
+  const sc = document.createElement('script');
+  sc.src = 'data/teachers.js';
+  sc.onload = () => {
+    const T = window.DATA_T;
+    Object.keys(BY_T).forEach(k => delete BY_T[k]);
+    T.rows.forEach(r => {
+      const p = { d: r[0], n: r[1], w: r[2], s: T.subjects[r[3]], type: r[4], room: r[5], t: r[6], g: r[7], ...(r[8] || {}) };
+      if (p.date) p.wk = weekNo(fromIso(p.date));
+      (BY_T[p.t] = BY_T[p.t] || []).push(p);
+    });
+    Object.assign(TEACHERS, T.teachers);
+    allT = 'ok';
+    if (state.tab === 'teachers') render();
+  };
+  sc.onerror = () => { allT = 'fail'; sc.remove(); if (state.tab === 'teachers') render(); };
+  document.body.appendChild(sc);
+}
+state.tLimit = 40;
 function renderTeachers() {
   if (state.teacher) return renderTeacherCard(state.teacher);
+  if (allT === 'no') loadAllTeachers();
   const q = state.query.trim().toLowerCase();
   const mineT = new Set(MINE.map(p => p.t).filter(Boolean));
-  const found = Object.entries(TEACHERS).filter(([id, t]) => {
-    if (!q) return mineT.has(id);
-    const subj = (BY_T[id] || []).map(p => p.s).join(' ').toLowerCase();
-    return t.name.toLowerCase().includes(q) || subj.includes(q);
-  });
-  const rows = found.slice(0, 60).sort((a, b) => a[1].name.localeCompare(b[1].name, 'ru')).map(([id, t]) => {
+  const byName = (a, b) => a[1].name.localeCompare(b[1].name, 'ru');
+  const all = Object.entries(TEACHERS).sort(byName);
+  const mineList = all.filter(([id]) => mineT.has(id));
+  const found = q ? all.filter(([id, t]) => t.name.toLowerCase().includes(q) || (BY_T[id] || []).some(p => p.s.toLowerCase().includes(q))) : all.filter(([id]) => !mineT.has(id));
+  const row = ([id, t]) => {
     const w = teacherWhere(id);
     const on = w && w.mode === 'now';
     const subjects = [...new Set((BY_T[id] || []).map(p => p.s))];
@@ -245,14 +278,21 @@ function renderTeachers() {
     return `<button class="t-row glass" data-teacher="${id}"><span class="mono-ini">${initials(t.name)}</span>
       <span class="t-info"><span class="t-name">${esc(t.name)}</span><span class="t-sub">${t.rank} · ${sub}</span></span>
       ${on ? '<span class="t-status on">на паре</span>' : ''}</button>`;
-  }).join('');
+  };
+  const shown = found.slice(0, state.tLimit);
+  const more = found.length > shown.length ? `<button class="btn wide t-more" data-tmore>Показать ещё · осталось ${found.length - shown.length}</button>` : '';
+  const loading = allT === 'loading' ? '<p class="hint" style="margin:0 4px">Загружаю всех преподавателей вуза…</p>'
+    : allT === 'fail' ? '<p class="hint" style="margin:0 4px">Не удалось загрузить всех преподавателей — нет связи. <button class="link-btn" data-tretry>повторить</button></p>' : '';
+  const rows = q ? shown.map(row).join('')
+    : `${mineList.length ? `<div class="sec-title">Ваши · ${mineList.length}</div>${mineList.map(row).join('')}` : ''}
+       ${found.length ? `<div class="sec-title">Все преподаватели · ${found.length}</div>${shown.map(row).join('')}` : ''}`;
   return `
     ${brand()}
     <header class="page-title img-title"><div><h1><span class="title-pix">Преподы</span></h1><p>Где найти · когда ловить</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.teachers)}" alt=""></header>
     <div class="search-wrap"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input class="search glass" id="tq" type="search" enterkeyhint="search" placeholder="Фамилия или предмет" value="${esc(state.query)}" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Поиск преподавателя"></div>
-    <p class="hint" style="margin:0 4px">${q ? `Найдено: ${found.length}${found.length > 60 ? ' · показаны первые 60, уточните запрос' : ''}` : `Ваши преподаватели · поиск — по всем ${Object.keys(TEACHERS).length} преподавателям ${GROUP.inst}`}</p>
-    <section class="list">${rows || `<div class="free glass"><span>Никого не нашёл по «${esc(state.query)}»</span></div>`}</section>`;
+    ${loading || `<p class="hint" style="margin:0 4px">${q ? `Найдено: ${found.length}` : `Поиск — по всем ${Object.keys(TEACHERS).length} преподавателям ${allT === 'ok' ? 'МГСУ' : GROUP.inst}`}</p>`}
+    <section class="list">${rows.trim() ? rows : `<div class="free glass"><span>Никого не нашёл по «${esc(state.query)}»</span></div>`}${more}</section>`;
 }
 
 // пары преподавателя на конкретную дату; потоковые пары (несколько групп в одной аудитории) — одной строкой
@@ -305,8 +345,8 @@ function renderTeacherCard(id) {
     ${t.dept || t.office ? `<div class="office glass">${t.dept ? `<span>${esc(t.dept)}</span>` : ''}${t.office ? `<span>Кабинет кафедры: <b>${esc(t.office)}</b> — если нет на паре</span>` : ''}</div>` : ''}
     <div class="sec-title">Расписание</div>
     <div class="week glass">
-      <div class="week-label"><span class="week-no">${wn}</span>
-        <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span></div>
+      <button class="week-label" data-cal aria-label="Открыть календарь"><span class="week-no">${wn}</span>
+        <span class="week-par">${parity === 'even' ? 'чётная' : 'нечётная'} <i>· неделя</i></span>${ICON.cal}</button>
       <div class="arrows">
         ${state.tWeek ? `<button class="btn round" data-tweek="0" aria-label="К текущей неделе">${ICON.undo}</button>` : ''}
         <button class="btn round" data-tweek="-1" aria-label="Предыдущая неделя">${ICON.left}</button>
@@ -382,6 +422,9 @@ function rows(entries, fmt) {
 }
 
 function renderSkips() {
+  if (VIEWING) return `${brand()}<header class="hero"><h1 class="title-h"><span class="title-pix">Прогулы</span></h1></header>
+    <div class="card glass"><div class="empty">Сейчас открыто расписание чужой группы.<br>Пропуски и справки ведутся только для своей.<br><br>
+    <button class="btn accent" data-grpback>Вернуться к своей группе</button></div></div>`;
   if (state.sub !== 'stats' && typeof renderSkipsSub === 'function') return renderSkipsSub();
   const t0 = now();
   const { from, to, lbl } = periodRange();
@@ -501,6 +544,7 @@ function toast(msg) {
   clearTimeout(toastTo); toastTo = setTimeout(() => el.classList.remove('show'), 1800);
 }
 function toggleSkip(k) {
+  if (VIEWING) { toast('Это чужая группа — пропуски отмечаются только в своей'); return; }
   if (skips[k]) { delete skips[k]; toast('Пропуск убран'); }
   else { skips[k] = { r: 'none', at: Date.now() }; state.justStamped = k; toast('Пропуск отмечен'); if (navigator.vibrate) navigator.vibrate(15); }
   saveSkips();
@@ -512,6 +556,8 @@ document.addEventListener('click', e => {
   if (ds.tab) { state.tab = ds.tab; state.teacher = null; render(); window.scrollTo(0, 0); return; }
   if (ds.day) { state.day = +ds.day; render(); return; }
   if (ds.week) { state.weekOffset = +ds.week === 0 ? 0 : state.weekOffset + +ds.week; render(); return; }
+  if ('tmore' in ds) { state.tLimit += 60; render(); return; }
+  if ('tretry' in ds) { allT = 'no'; render(); return; }
   if (ds.skip) { toggleSkip(ds.skip); render(); return; }
   if (ds.undo) { toggleSkip(ds.undo); render(); return; }
   if (ds.reason) { const [d, n, r] = ds.reason.split('|'); const k = d + '|' + n; if (skips[k]) { skips[k].r = r; saveSkips(); render(); } return; }
@@ -533,7 +579,7 @@ document.addEventListener('submit', e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id !== 'tq') return;
-  state.query = e.target.value;
+  state.query = e.target.value; state.tLimit = 40;
   const pos = e.target.selectionStart;
   render();
   const el = document.getElementById('tq'); el.focus(); el.setSelectionRange(pos, pos);
@@ -544,7 +590,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) rend
 
 
 // запуск — после загрузки всех скриптов (more.js дополняет разделы)
-document.addEventListener('DOMContentLoaded', () => { render(); });
+// скрипты подгружает boot.js — он сам вызовет render(), когда загрузит все файлы
+if (!D.booting) document.addEventListener('DOMContentLoaded', () => { render(); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

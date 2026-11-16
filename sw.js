@@ -1,6 +1,6 @@
 /* Офлайн-режим: файлы приложения кэшируются, приложение открывается без интернета. */
-const CACHE = 'hronika-v24';
-const FILES = ['./', 'index.html', 'styles.css', 'theme-light.css', 'app.js', 'more.js', 'swipe.js', 'mobile.js', 'data.js', 'manifest.webmanifest',
+const CACHE = 'hronika-v37';
+const FILES = ['./', 'index.html', 'styles.css', 'theme-light.css', 'app.js', 'more.js', 'swipe.js', 'mobile.js', 'calendar.js', 'picker.js', 'work.js', 'boot.js', 'data.js', 'data/iiesm.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });

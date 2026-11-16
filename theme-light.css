@@ -120,7 +120,8 @@
 [data-skin="st"] .stage { position: relative; padding-top: 118px; margin-top: -4px; }
 [data-skin="st"] .stage .daily { position: absolute; left: 50%; top: 0; width: 220px; height: auto; transform: translateX(-50%) rotate(-9deg); z-index: -1;
   filter: drop-shadow(0 18px 28px rgba(20,22,30,.16)); pointer-events: none; }
-[data-skin="st"] .now-card { background: rgb(var(--sf) / .36); -webkit-backdrop-filter: blur(16px) saturate(170%); backdrop-filter: blur(16px) saturate(170%); }
+/* без размытия: оно пересчитывалось на каждом кадре свайпа и дёргало анимацию на iPhone */
+[data-skin="st"] .now-card { background: rgb(var(--sf) / .8); -webkit-backdrop-filter: none; backdrop-filter: none; }
 [data-skin="st"] .now-card.live { border-color: var(--edge); box-shadow: 0 1px 0 var(--edge) inset, 0 12px 30px rgba(20,22,30,.08); }
 [data-skin="st"] .nc-head { color: var(--ink-2); }
 [data-skin="st"] .nc-head em { color: var(--ink); font-family: var(--f-pix); font-size: 14px; letter-spacing: 0; text-transform: none; }

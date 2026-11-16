@@ -17,14 +17,14 @@ const plannedSkips = (t0 = now()) => occurrences(t0, SEM_END).filter(o => o.end 
 
 /* ---------- подразделы «Прогулов» ---------- */
 function skipsSubSeg() {
-  return `<div class="seg glass sub-seg" role="group" aria-label="Раздел">${[['stats', 'Статистика'], ['certs', 'Справки'], ['cmp', 'Сравнение']]
+  return `<div class="seg glass sub-seg" role="group" aria-label="Раздел">${[['stats', 'Статистика'], ['certs', 'Справки'], ['work', 'Работа']]
     .map(([k, l]) => `<button data-sub="${k}" aria-pressed="${state.sub === k}">${l}</button>`).join('')}</div>`;
 }
 function renderSkipsSub() {
   return `${brand()}
-    <header class="page-title img-title"><div><h1><span class="title-pix">Прогулы</span></h1><p>${state.sub === 'certs' ? 'Анализ пропусков' : 'Сравнение предметов'}</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.skips)}" alt=""></header>
+    <header class="page-title img-title"><div><h1><span class="title-pix">Прогулы</span></h1><p>${state.sub === 'work' ? 'Когда можно брать смены' : 'Анализ пропусков'}</p></div><img class="only-light pt-st" src="${stickerNow(ST_SHIFT.skips)}" alt=""></header>
     ${skipsSubSeg()}
-    <div class="fade-in">${state.sub === 'certs' ? renderCerts() : renderCompare()}</div>`;
+    <div class="fade-in">${state.sub === 'work' && typeof renderWork === 'function' ? renderWork() : renderCerts()}</div>`;
 }
 
 /* =====================================================================
@@ -46,18 +46,33 @@ const foldBody = (k, html) => isOpen(k) ? `<div class="fold-body${state.foldAnim
 const CHEV = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 AFTER_RENDER.push(() => { state.foldAnim = null; });
 // номера справок сдвигаются после удаления/получения — раскрытость карточек сбрасываем
+// Предметы, которые нужно закрыть справкой: справки считаются только по их пропускам
+let certSubj = store.get('hp.certSubj', []);
+const saveCertSubj = () => store.set('hp.certSubj', certSubj);
+function certAnalysis() {
+  const A = skipAnalysis();
+  const sel = new Set(certSubj);
+  const open = A.open.filter(x => sel.has(x.p.s));
+  return { ...A, allOpen: A.open, open, openDays: [...new Set(open.map(x => x.iso))].sort() };
+}
 const resetCertFold = () => Object.keys(state.fold).forEach(k => { if (/^c\d/.test(k)) delete state.fold[k]; });
 
 function skipAnalysis(t0 = now()) {
   const held = heldPairs(t0);
+  // будущие пропуски («не пойду») тоже закрываются справкой — берём их дни целиком,
+  // чтобы остальные пары этих дней считались посещёнными
+  const fut = occurrences(t0, SEM_END).filter(o => o.end > t0);
+  const futDays = new Set(fut.filter(o => skips[o.key]).map(o => iso(o.date)));
+  const ahead = fut.filter(o => futDays.has(iso(o.date))).map(o => ({ ...o, planned: true }));
+  const pairs = [...held, ...ahead];
   const days = {}; // iso → { skipped:[], attended:[] }
-  held.forEach(o => {
+  pairs.forEach(o => {
     const k = iso(o.date);
     const d = days[k] = days[k] || { iso: k, date: o.date, skipped: [], attended: [] };
     (skips[o.key] ? d.skipped : d.attended).push(o);
   });
   const certOf = di => certs.find(c => c.from <= di && di <= c.to);
-  const all = held.filter(o => skips[o.key]).map(o => {
+  const all = pairs.filter(o => skips[o.key]).map(o => {
     const di = iso(o.date), c = certOf(di);
     return { ...o, iso: di, cert: c || null, closed: c ? 'cert' : skips[o.key].r === 'valid' ? 'valid' : null };
   });
@@ -135,7 +150,7 @@ function lessonList(list) {
 }
 
 function renderCerts() {
-  const A = skipAnalysis();
+  const A = certAnalysis();
   const auto = autoPeriods(A.openDays);
   const manual = Array.isArray(certPlan);
   const plan = manual ? certPlan : auto;
@@ -149,13 +164,13 @@ function renderCerts() {
     <div class="kpis kpis4">
       <div class="kpi"><b>${total}</b><span>${plural(total, 'пропуск', 'пропуска', 'пропусков')} всего</span></div>
       <div class="kpi"><b>${closed.length}</b><span>закрыто</span></div>
-      <div class="kpi"><b class="rose">${A.open.length}</b><span>не закрыто</span></div>
-      <div class="kpi"><b>${manual ? need : auto.length}</b><span>${plural(manual ? need : auto.length, 'справка нужна', 'справки нужно', 'справок нужно')}</span></div>
+      <div class="kpi"><b class="rose">${A.allOpen.length}</b><span>не закрыто</span></div>
+      <div class="kpi"><b>${certSubj.length || manual ? (manual ? need : auto.length) : '—'}</b><span>${certSubj.length || manual ? plural(manual ? need : auto.length, 'справка нужна', 'справки нужно', 'справок нужно') : 'справок — выберите предметы'}</span></div>
     </div>
     ${total ? `<div class="stack" role="img" aria-label="Закрыто ${closed.length}, войдут в справки ${E.covered.size}, без справки ${E.uncovered.length}">
       <i class="st-closed" style="width:${pc(closed.length)}%"></i><i class="st-plan" style="width:${pc(E.covered.size)}%"></i><i class="st-open" style="width:${pc(E.uncovered.length)}%"></i></div>
     <div class="legend"><span><i class="st-closed"></i>закрыто · ${closed.length}</span><span><i class="st-plan"></i>нужна справка · ${E.covered.size}</span>${E.uncovered.length ? `<span><i class="st-open"></i>не покрыто · ${E.uncovered.length}</span>` : ''}</div>` : ''}
-    ${A.planned.length ? `<p class="hint">${A.planned.length} ${plural(A.planned.length, 'запланированный пропуск', 'запланированных пропуска', 'запланированных пропусков')} ещё не наступили — в анализ не входят.</p>` : ''}
+    ${A.planned.length ? `<p class="hint">Включая ${A.planned.length} ${plural(A.planned.length, 'запланированный пропуск', 'запланированных пропуска', 'запланированных пропусков')} («не пойду») — они ещё не наступили.</p>` : ''}
   </div>`;
 
   if (!total) {
@@ -200,16 +215,33 @@ function renderCerts() {
   }).join('');
   const valid = closed.filter(x => x.closed === 'valid');
 
-  return `${summary}${haveCertCard()}
-    <div class="sec-head"><h2>${manual ? 'Ваш план справок' : 'Рекомендуемые справки'}</h2>
+  // выбор предметов: только те, где есть незакрытые пропуски
+  const bySubj = {};
+  A.allOpen.forEach(x => { bySubj[x.p.s] = (bySubj[x.p.s] || 0) + 1; });
+  const subjNames = Object.keys(bySubj).sort((a, b) => bySubj[b] - bySubj[a] || a.localeCompare(b));
+  const picked = subjNames.filter(n => certSubj.includes(n));
+  const picker = subjNames.length ? `<div class="card glass cert-pick"><h3>Что закрыть справкой<i>${picked.length} из ${subjNames.length}</i></h3>
+      <p class="hint">Отметьте предметы, где пропуски нужно закрывать справкой, — посчитаю, какие справки нужны.</p>
+      <div class="chips">${subjNames.map(n => `<button class="chip" data-csubj="${esc(n)}" aria-pressed="${certSubj.includes(n)}">${esc(n)} <b>${bySubj[n]}</b></button>`).join('')}</div>
+      <div class="cert-pick-act"><button class="link-btn" data-csall>выбрать все</button>${picked.length ? '<button class="link-btn" data-csnone>сбросить</button>' : ''}</div></div>` : '';
+  const showPlan = picked.length || manual;
+  const planBlock = showPlan ? `
+    <div class="sec-head"><h2>${manual ? 'Ваш план справок' : 'Нужные справки'}</h2>
       ${manual ? '<button class="link-btn" data-cpauto>вернуть автоподбор</button>' : ''}</div>
     ${A.open.length ? `<p class="hint sec-hint">${manual ? 'Ручной план — пересчёт сразу после каждого изменения.' : 'Пропуски в пределах 14 дней объединены в одну справку.'} Нажмите на справку, чтобы раскрыть.</p>` : ''}
-    ${periodCards || `<div class="card glass"><div class="empty">Все пропуски закрыты</div></div>`}
+    ${periodCards || `<div class="card glass"><div class="empty">По выбранным предметам всё закрыто</div></div>`}
     ${A.open.length || manual ? `<button class="btn add-period" data-cpadd>${ICON.plus} Добавить период</button>` : ''}
-    ${uncoveredCard}
+    ${uncoveredCard}` : (subjNames.length ? '' : `<div class="card glass"><div class="empty">Все пропуски закрыты</div></div>`);
+
+  return `${summary}
+    ${picker}
+    ${planBlock}
+    ${haveCertCard()}
     ${closed.length ? `<div class="card glass fold-card ${isOpen('closed') ? 'open' : ''}">${foldHead('closed', 'Закрыто', closed.length)}
       ${foldBody('closed', `${certList ? `<div class="hist">${certList}</div>` : ''}
       ${valid.length ? `<p class="hint">${valid.length} ${plural(valid.length, 'пропуск закрыт', 'пропуска закрыты', 'пропусков закрыто')} с причиной «Уважительная».</p>` : ''}`)}</div>` : ''}
+    ${MY_SUBJECTS.length > 1 ? `<div class="card glass fold-card ${isOpen('cmp') ? 'open' : ''}">${foldHead('cmp', 'Сравнение предметов', cmpSel.length ? cmpSel.length + ' из 3' : '')}
+      ${foldBody('cmp', `<div class="cmp-in">${renderCompare()}</div>`)}</div>` : ''}
     ${certDisclaimer()}`;
 }
 /* «У меня есть справка»: вводишь даты — получаешь все пары за эти дни */
@@ -385,7 +417,7 @@ function attendanceStats() {
     held: held.length, skipped, pct: held.length ? (held.length - skipped) / held.length * 100 : 0,
     cur, best, early, wCur, wBest, clean,
     safe: Object.values(bySubj).every(s => s.k / s.h < LIMIT),
-    allClosed: A.all.length > 0 && A.open.length === 0,
+    allClosed: A.all.some(x => !x.planned) && !A.open.some(x => !x.planned),
     passed: exams.filter(e => e.grade && e.grade !== '2' && e.grade !== 'nz').length,
     five: exams.some(e => e.grade === '5'),
   };
@@ -503,12 +535,13 @@ async function checkUpdate(manual) {
   store.set('hp.updChecked', Date.now());
   if (manual) toast('Проверяю…');
   try {
-    const txt = await (await fetch('data.js?t=' + Date.now(), { cache: 'no-store' })).text();
-    const m = txt.match(/window\.DATA\s*=\s*([\s\S]*?);?\s*$/);
+    // пары группы лежат в файле её института: data/<институт>.js
+    const inst = (D.catalog || []).find(i => i.key === GROUP.inst);
+    const txt = await (await fetch('data/' + inst.file + '?t=' + Date.now(), { cache: 'no-store' })).text();
+    const m = txt.match(/window\.DATA_I\s*=\s*([\s\S]*?);?\s*$/);
     const nd = JSON.parse(m[1]);
-    const id = nd.group.id || nd.group.group;
-    const changed = sigOf(nd.schedule.filter(p => p.g === id)).join('\n') !== CUR_SIG.join('\n') || id !== MY;
-    if (changed) { updateReady = { updated: nd.source && nd.source.updated }; if (state.tab === 'pairs') render(); if (manual) toast('Есть новое расписание'); }
+    const changed = sigOf(nd.schedule.filter(p => p.g === MY)).join('\n') !== CUR_SIG.join('\n');
+    if (changed) { updateReady = { updated: null }; if (state.tab === 'pairs') render(); if (manual) toast('Есть новое расписание'); }
     else if (manual) toast('Расписание актуально');
   } catch (e) { if (manual) toast('Не удалось проверить — нет связи'); }
 }
@@ -534,18 +567,25 @@ document.addEventListener('click', e => {
   if (ds.fold) { state.fold[ds.fold] = !state.fold[ds.fold]; state.foldAnim = state.fold[ds.fold] ? ds.fold : null; render(); return; }
   if (ds.cpedit != null) {
     const i = +ds.cpedit;
-    if (i >= 0 && !Array.isArray(certPlan)) { const A = skipAnalysis(); certPlan = autoPeriods(A.openDays); saveCertPlan(); }
+    if (i >= 0 && !Array.isArray(certPlan)) { const A = certAnalysis(); certPlan = autoPeriods(A.openDays); saveCertPlan(); }
     state.certEdit = i >= 0 ? i : null; render(); return;
   }
   if (ds.cpdel != null) { resetCertFold(); certPlan.splice(+ds.cpdel, 1); saveCertPlan(); state.certEdit = null; render(); toast('Период удалён'); return; }
   if ('cpadd' in ds) {
-    const A = skipAnalysis();
+    const A = certAnalysis();
     const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
     const E = evalPlan(A, plan);
     const start = E.uncovered[0] ? E.uncovered[0].iso : iso(today);
     certPlan = [...plan, { from: start, to: start }]; saveCertPlan();
     state.certEdit = certPlan.length - 1; render(); return;
   }
+  if (ds.csubj != null) {
+    const n = ds.csubj;
+    certSubj = certSubj.includes(n) ? certSubj.filter(x => x !== n) : [...certSubj, n];
+    saveCertSubj(); resetCertFold(); render(); return;
+  }
+  if ('csall' in ds) { const A = skipAnalysis(); certSubj = [...new Set([...certSubj, ...A.open.map(x => x.p.s)])]; saveCertSubj(); resetCertFold(); render(); return; }
+  if ('csnone' in ds) { certSubj = []; saveCertSubj(); resetCertFold(); render(); return; }
   if ('ciopen' in ds) { certIn = { from: '', to: '' }; render(); return; }
   if ('ciclose' in ds) { certIn = null; render(); return; }
   if ('cicopy' in ds) {
@@ -563,7 +603,7 @@ document.addEventListener('click', e => {
   }
   if ('cpauto' in ds) { resetCertFold(); certPlan = null; saveCertPlan(); state.certEdit = null; render(); toast('Автоподбор включён'); return; }
   if (ds.cpdone != null) {
-    const A = skipAnalysis();
+    const A = certAnalysis();
     const plan = Array.isArray(certPlan) ? certPlan : autoPeriods(A.openDays);
     const p = plan[+ds.cpdone];
     if (!p) return;
