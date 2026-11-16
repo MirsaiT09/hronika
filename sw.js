@@ -1,5 +1,5 @@
 /* Офлайн-режим: файлы приложения кэшируются, приложение открывается без интернета. */
-const CACHE = 'hronika-v19';
+const CACHE = 'hronika-v20';
 const FILES = ['./', 'index.html', 'styles.css', 'theme-light.css', 'app.js', 'more.js', 'swipe.js', 'mobile.js', 'data.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 

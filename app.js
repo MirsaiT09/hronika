@@ -98,8 +98,8 @@ const ICON = {
 };
 const ORN = '<div class="orn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v20M5 9h14M12 2l2 3-2 3-2-3zM8.5 16 12 22l3.5-6"/></svg></div>';
 const fmtDur = m => m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч${m % 60 ? ' ' + (m % 60) + ' мин' : ''}`;
-// стикеры (assets/st/N.webp) — для светлой темы
-const ST = n => `assets/st/${n}.webp`;
+// стикеры — для светлой темы: 1–53 в assets/st1, 54–105 в assets/st2 (GitHub грузит не больше 100 файлов за раз)
+const ST = n => `assets/st${n <= 53 ? 1 : 2}/${n}.webp`;
 const STICKERS = [97, 59, 62, 94, 36, 72, 89, 31, 13, 39, 34, 96, 85, 37, 38, 20, 11, 2, 7, 33, 40, 54, 64, 86, 83, 88, 98, 103, 105, 4, 3, 65, 47, 56, 73, 26, 49, 75, 76, 79, 15, 16, 43, 9, 14, 41, 87, 61, 63, 55, 66, 67, 68, 71, 74, 77, 78, 80, 84, 90, 91, 93, 95, 99, 101, 102, 104, 1, 6, 8, 10, 12, 17, 19, 21, 22, 23, 24, 27, 28, 29, 30, 32, 35, 42, 44, 45, 46, 48, 50, 51, 52, 53, 57, 58, 60, 69, 70, 81, 82];
 const dayIdx = d => Math.floor((dayStart(d) - new Date(2026, 0, 1)) / DAY_MS);
 const stickerOfDay = (d = dayStart(now()), shift = 0) => ST(STICKERS[((dayIdx(d) + shift) % STICKERS.length + STICKERS.length) % STICKERS.length]);
